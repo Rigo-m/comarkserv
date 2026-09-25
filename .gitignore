@@ -8,3 +8,4 @@ dist
 .env.*
 !.env.example
 _site
+bench/.cache

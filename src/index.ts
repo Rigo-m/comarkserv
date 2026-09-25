@@ -19,3 +19,7 @@ export { createSearchIndex, extractOutline } from "./search.ts";
 export type { SearchEntry, SearchHeading, SearchIndex, SearchIndexOptions } from "./search.ts";
 export { DEFAULT_PORT, findPort, startServer } from "./server.ts";
 export type { ComarkservServer, ServeOptions } from "./server.ts";
+export { parseTheme } from "./theme-parse.ts";
+export type { Palette } from "./theme-parse.ts";
+export { createThemeStore, OMARCHY_CURRENT, THEME_SOURCES } from "./themes.ts";
+export type { CatalogEntry, ThemeSource, ThemeStore, ThemeStoreOptions } from "./themes.ts";

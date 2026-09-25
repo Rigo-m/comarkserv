@@ -47,7 +47,8 @@
     "check": "vp check",
     "prepublishOnly": "vp run build",
     "prepare": "vp config",
-    "playground": "node src/cli.ts playground"
+    "playground": "node src/cli.ts playground",
+    "bench": "vp pack && node bench/run.ts"
   },
   "dependencies": {
     "@comark/html": "^0.7.0",
