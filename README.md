@@ -21,8 +21,8 @@ npx comarkserv ./docs
 
 ## Why comarkserv
 
-- **Fast.** The server is ready in about 130 ms. A repeated page takes less than 1 ms, and the throughput is about 10× that of markserv. See the [benchmarks](#benchmarks).
-- **Small.** 23 MB installed, 12× less than markserv.
+- **Fast.** The server is ready in about 130 ms. A repeated page takes less than 1 ms, and the throughput is about 9× that of markserv. See the [benchmarks](#benchmarks).
+- **Small.** 22 MB and 28 packages installed, 12× less than markserv.
 - **Live.** When you save, the page replaces only the blocks that changed and flashes them. The scroll position stays.
 - **Modern markdown.** GFM, GitHub alerts, Comark components, code with titles and line highlights, math and Mermaid diagrams. The server renders math and diagrams, so the browser loads no JavaScript for them.
 - **Search.** <kbd>⌘</kbd> <kbd>K</kbd> finds pages and headings in the whole folder.
@@ -75,17 +75,17 @@ comarkserv needs Node.js 20.19 or later.
 
 <!-- bench:start -->
 
-|                                 |   comarkserv 0.1.0 |      markserv 1.20.0 | comarkserv     |
-| ------------------------------- | -----------------: | -------------------: | -------------- |
-| Install size                    | 23 MB, 52 packages | 277 MB, 277 packages | 12.2× less     |
-| Startup, to the first response  |             129 ms |               242 ms | 1.9× faster    |
-| Memory at idle (RSS)            |              90 MB |               112 MB | 1.2× less      |
-| First render of a page          |              24 ms |                31 ms | 1.3× faster    |
-| Page, repeated request (median) |             0.3 ms |               1.6 ms | 5.5× faster    |
-| Page after an edit (median)     |             1.5 ms |               1.4 ms | about the same |
-| Large page, 301 KB (median)     |             4.3 ms |                34 ms | 8.0× faster    |
-| Throughput, 16 connections      |        11219 req/s |           1145 req/s | 9.8× faster    |
-| Peak memory under load (RSS)    |             321 MB |               463 MB | 1.4× less      |
+|                                 |   comarkserv 0.1.0 |      markserv 1.20.0 | comarkserv  |
+| ------------------------------- | -----------------: | -------------------: | ----------- |
+| Install size                    | 22 MB, 28 packages | 276 MB, 277 packages | 12.4× less  |
+| Startup, to the first response  |             131 ms |               235 ms | 1.8× faster |
+| Memory at idle (RSS)            |              91 MB |               112 MB | 1.2× less   |
+| First render of a page          |              24 ms |                31 ms | 1.3× faster |
+| Page, repeated request (median) |             0.3 ms |               1.6 ms | 5.4× faster |
+| Page after an edit (median)     |             1.4 ms |               1.7 ms | 1.2× faster |
+| Large page, 301 KB (median)     |             4.0 ms |                35 ms | 8.7× faster |
+| Throughput, 16 connections      |        10050 req/s |           1136 req/s | 8.8× faster |
+| Peak memory under load (RSS)    |             310 MB |               353 MB | 1.1× less   |
 
 _macOS 26.2 (arm64), Apple M4 Pro, 24 GB, Node.js 24.21.0, 2026-09-25. Run `vp run bench` to measure on your machine._
 <!-- bench:end -->
@@ -95,7 +95,7 @@ _macOS 26.2 (arm64), Apple M4 Pro, 24 GB, Node.js 24.21.0, 2026-09-25. Run `vp r
 - Both servers run as installed from npm: markserv from the registry, comarkserv from a packed tarball. They use the same Node.js and their default options, with live reload on.
 - The corpus has 100 GFM pages of about 4 KB each, with code in four languages, and one large page. It uses no comarkserv syntax, so both servers do the same work.
 - "Startup" and "First render" are medians of five fresh processes. The other rows come from one process: 200 repeated requests, 20 edits, and 5 seconds of load on 16 keep-alive connections over all 100 pages. The client runs on the same machine and asks for no compression.
-- comarkserv keeps each rendered page until the file changes, and markserv renders the page on each request. That is the main reason for the difference in the "repeated request" and "throughput" rows. The "after an edit" row shows the real render cost, and it is about the same for both.
+- comarkserv keeps each rendered page until the file changes, and markserv renders the page on each request. That is the main reason for the difference in the "repeated request" and "throughput" rows. The "after an edit" row shows the real render cost. It is close for both servers, and it changes a little between runs.
 - Peak memory under load changes more between runs than the other rows.
 
 ## Command line

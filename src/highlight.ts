@@ -38,7 +38,8 @@ function createRegistry(): Record<string, RegistryValue> {
 
 function lazyHighlight(id: LanguageId): HighlightFn {
   return (code, render) => {
-    const highlight = getLoadedLanguage(id);
+    // A twinkleplop grammar also takes the render options.
+    const highlight = getLoadedLanguage(id) as HighlightFn | undefined;
     if (!highlight) throw new Error(`The "${id}" grammar is not loaded`);
     return highlight(code, render);
   };

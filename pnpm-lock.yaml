@@ -178,6 +178,22 @@ importers:
       '@comark/html':
         specifier: ^0.7.0
         version: 0.7.0(beautiful-mermaid@1.1.3)(katex@0.17.0)
+      '@twinkleplop/theme-github':
+        specifier: ^0.2.1
+        version: 0.2.1
+      beautiful-mermaid:
+        specifier: ^1.1.3
+        version: 1.1.3
+      comark:
+        specifier: ^0.7.0
+        version: 0.7.0(beautiful-mermaid@1.1.3)(katex@0.17.0)
+      katex:
+        specifier: ^0.17.0
+        version: 0.17.0
+      srvx:
+        specifier: ^1.0.5
+        version: 1.0.5
+    devDependencies:
       '@twinkleplop/bash':
         specifier: ^0.1.4
         version: 0.1.4
@@ -214,9 +230,6 @@ importers:
       '@twinkleplop/svelte':
         specifier: ^0.1.4
         version: 0.1.4
-      '@twinkleplop/theme-github':
-        specifier: ^0.2.1
-        version: 0.2.1
       '@twinkleplop/toml':
         specifier: ^0.1.4
         version: 0.1.4
@@ -229,40 +242,27 @@ importers:
       '@twinkleplop/yaml':
         specifier: ^0.1.4
         version: 0.1.4
-      beautiful-mermaid:
-        specifier: ^1.1.3
-        version: 1.1.3
-      chokidar:
-        specifier: ^5.0.0
-        version: 5.0.0
-      citty:
-        specifier: ^0.2.2
-        version: 0.2.2
-      comark:
-        specifier: ^0.7.0
-        version: 0.7.0(beautiful-mermaid@1.1.3)(katex@0.17.0)
-      get-port-please:
-        specifier: ^3.2.0
-        version: 3.2.0
-      katex:
-        specifier: ^0.17.0
-        version: 0.17.0
-      pathe:
-        specifier: ^2.0.3
-        version: 2.0.3
-      srvx:
-        specifier: ^1.0.5
-        version: 1.0.5
-      tinyglobby:
-        specifier: ^0.2.17
-        version: 0.2.17
-    devDependencies:
       '@types/node':
         specifier: ^26.1.1
         version: 26.6.2
       bumpp:
         specifier: ^11.1.0
         version: 11.1.0
+      chokidar:
+        specifier: ^5.0.0
+        version: 5.0.0
+      citty:
+        specifier: ^0.2.2
+        version: 0.2.2
+      get-port-please:
+        specifier: ^3.2.0
+        version: 3.2.0
+      pathe:
+        specifier: ^2.0.3
+        version: 2.0.3
+      tinyglobby:
+        specifier: ^0.2.17
+        version: 0.2.17
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

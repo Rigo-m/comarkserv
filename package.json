@@ -41,17 +41,24 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack",
+    "build": "vp pack && node scripts/licenses.ts",
     "dev": "vp pack --watch",
     "test": "vp test",
     "check": "vp check",
     "prepublishOnly": "vp run build",
     "prepare": "vp config",
     "playground": "node src/cli.ts playground",
-    "bench": "vp pack && node bench/run.ts"
+    "bench": "vp run build && node bench/run.ts"
   },
   "dependencies": {
     "@comark/html": "^0.7.0",
+    "@twinkleplop/theme-github": "^0.2.1",
+    "beautiful-mermaid": "^1.1.3",
+    "comark": "^0.7.0",
+    "katex": "^0.17.0",
+    "srvx": "^1.0.5"
+  },
+  "devDependencies": {
     "@twinkleplop/bash": "^0.1.4",
     "@twinkleplop/css": "^0.1.4",
     "@twinkleplop/go": "^0.1.4",
@@ -64,24 +71,17 @@
     "@twinkleplop/rust": "^0.1.4",
     "@twinkleplop/sql": "^0.1.4",
     "@twinkleplop/svelte": "^0.1.4",
-    "@twinkleplop/theme-github": "^0.2.1",
     "@twinkleplop/toml": "^0.1.4",
     "@twinkleplop/tsx": "^0.1.4",
     "@twinkleplop/typescript": "^0.1.4",
     "@twinkleplop/yaml": "^0.1.4",
-    "beautiful-mermaid": "^1.1.3",
-    "chokidar": "^5.0.0",
-    "citty": "^0.2.2",
-    "comark": "^0.7.0",
-    "get-port-please": "^3.2.0",
-    "katex": "^0.17.0",
-    "pathe": "^2.0.3",
-    "srvx": "^1.0.5",
-    "tinyglobby": "^0.2.17"
-  },
-  "devDependencies": {
     "@types/node": "^26.1.1",
     "bumpp": "^11.1.0",
+    "chokidar": "^5.0.0",
+    "citty": "^0.2.2",
+    "get-port-please": "^3.2.0",
+    "pathe": "^2.0.3",
+    "tinyglobby": "^0.2.17",
     "typescript": "^7.0.2",
     "vite-plus": "catalog:"
   },
@@ -94,5 +94,32 @@
   },
   "engines": {
     "node": ">=20.19.0"
+  },
+  "inlinedDependencies": {
+    "@twinkleplop/bash": "0.1.4",
+    "@twinkleplop/core": "0.2.1",
+    "@twinkleplop/css": "0.1.4",
+    "@twinkleplop/go": "0.1.4",
+    "@twinkleplop/html": "0.1.4",
+    "@twinkleplop/javascript": "0.1.4",
+    "@twinkleplop/json": "0.1.4",
+    "@twinkleplop/markdown": "0.1.4",
+    "@twinkleplop/markdown-core": "0.1.4",
+    "@twinkleplop/python": "0.1.4",
+    "@twinkleplop/rust": "0.1.4",
+    "@twinkleplop/sql": "0.1.4",
+    "@twinkleplop/svelte": "0.1.4",
+    "@twinkleplop/toml": "0.1.4",
+    "@twinkleplop/tsx": "0.1.4",
+    "@twinkleplop/typescript": "0.1.4",
+    "@twinkleplop/yaml": "0.1.4",
+    "chokidar": "5.0.0",
+    "citty": "0.2.2",
+    "fdir": "6.5.0",
+    "get-port-please": "3.2.0",
+    "pathe": "2.0.3",
+    "picomatch": "4.0.7",
+    "readdirp": "5.1.1",
+    "tinyglobby": "0.2.17"
   }
 }

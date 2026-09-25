@@ -1,12 +1,32 @@
-import type { HighlightFn } from "@twinkleplop/markdown-core";
-
 interface LanguageModule {
-  language: () => HighlightFn;
+  language: () => Highlighter;
 }
+
+export type LanguageId =
+  | "bash"
+  | "css"
+  | "go"
+  | "html"
+  | "javascript"
+  | "json"
+  | "markdown"
+  | "python"
+  | "rust"
+  | "sql"
+  | "svelte"
+  | "toml"
+  | "tsx"
+  | "typescript"
+  | "yaml";
+
+/** A grammar: it returns the highlighted HTML of the code. */
+export type Highlighter = (code: string) => string;
 
 // Each loader imports its grammar package on first use only. The server starts
 // without any grammar and loads only the grammars that the pages use.
-const loaders = {
+// LanguageId is a plain union, so the published declarations do not contain the
+// types of the grammar packages, which comarkserv bundles.
+const loaders: Record<LanguageId, () => Promise<LanguageModule>> = {
   bash: () => import("@twinkleplop/bash"),
   css: () => import("@twinkleplop/css"),
   go: () => import("@twinkleplop/go"),
@@ -22,9 +42,7 @@ const loaders = {
   tsx: () => import("@twinkleplop/tsx"),
   typescript: () => import("@twinkleplop/typescript"),
   yaml: () => import("@twinkleplop/yaml"),
-} satisfies Record<string, () => Promise<LanguageModule>>;
-
-export type LanguageId = keyof typeof loaders;
+};
 
 export const supportedLanguages = Object.keys(loaders) as readonly LanguageId[];
 
@@ -75,11 +93,13 @@ export function resolveLanguage(name: string | undefined): LanguageId | undefine
   return Object.hasOwn(languageAliases, key) ? languageAliases[key] : undefined;
 }
 
-const pending = new Map<LanguageId, Promise<HighlightFn>>();
-const loaded = new Map<LanguageId, HighlightFn>();
+// The types here are the plain Highlighter, so the published declarations need
+// no twinkleplop types. highlight.ts gives the render options to the grammars.
+const pending = new Map<LanguageId, Promise<Highlighter>>();
+const loaded = new Map<LanguageId, Highlighter>();
 
 /** Loads a grammar. Concurrent and later calls share one import. */
-export function loadLanguage(id: LanguageId): Promise<HighlightFn> {
+export function loadLanguage(id: LanguageId): Promise<Highlighter> {
   let promise = pending.get(id);
   if (!promise) {
     promise = loaders[id]().then((module: LanguageModule) => {
@@ -94,7 +114,7 @@ export function loadLanguage(id: LanguageId): Promise<HighlightFn> {
 }
 
 /** Returns a grammar that is already loaded, without a load. */
-export function getLoadedLanguage(id: LanguageId): HighlightFn | undefined {
+export function getLoadedLanguage(id: LanguageId): Highlighter | undefined {
   return loaded.get(id);
 }
 

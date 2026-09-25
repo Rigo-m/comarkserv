@@ -5,7 +5,7 @@ export type { ComarkservHandler, ComarkservOptions } from "./handler.ts";
 export { collectLanguages, createCodeHighlighter } from "./highlight.ts";
 export type { CodeHighlighter, CodeHighlighterOptions } from "./highlight.ts";
 export { languageAliases, loadLanguage, resolveLanguage, supportedLanguages } from "./languages.ts";
-export type { LanguageId } from "./languages.ts";
+export type { Highlighter, LanguageId } from "./languages.ts";
 export { createMarkdownRenderer } from "./markdown.ts";
 export type {
   MarkdownFeatures,
