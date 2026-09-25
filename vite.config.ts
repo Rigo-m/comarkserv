@@ -18,10 +18,14 @@ export default defineConfig({
     exports: true,
   },
   lint: {
+    // The Raycast extension has its own tools and settings.
+    ignorePatterns: ["extras/raycast-extension/**", "bench/.cache/**"],
     options: {
       typeAware: true,
       typeCheck: true,
     },
   },
-  fmt: {},
+  fmt: {
+    ignorePatterns: ["extras/raycast-extension/**", "bench/.cache/**"],
+  },
 });

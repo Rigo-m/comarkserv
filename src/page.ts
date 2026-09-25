@@ -61,6 +61,7 @@ export const icons = {
     '<path d="M12 22a10 10 0 1 1 10-10c0 2.8-2.2 4-4.5 4H16a2 2 0 0 0-1.5 3.3c.4.5.6 1 .6 1.5 0 .7-.6 1.2-1.3 1.2Z"/><circle cx="7.5" cy="10.5" r="1.2"/><circle cx="12" cy="7" r="1.2"/><circle cx="16.5" cy="10.5" r="1.2"/>',
   ),
   code: icon('<path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/>'),
+  edit: icon('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
   folder: icon(
     '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
   ),
@@ -135,7 +136,7 @@ ${input.features?.math ? `<link rel="stylesheet" href="${escape(assets.katex)}">
 <nav class="cms-crumbs" aria-label="Breadcrumb">${renderCrumbs(input.crumbs)}</nav>
 <div class="cms-actions">
 <button class="cms-button cms-search" type="button" data-cms-search>${icons.search}<span>Search</span><kbd>⌘K</kbd></button>
-${input.rawHref ? `<a class="cms-button" href="${escape(input.rawHref)}" title="View the source">${icons.code}</a>\n` : ""}<button class="cms-button" type="button" data-cms-theme title="Change the theme">${icons.palette}</button>
+${input.rawHref ? `<a class="cms-button" href="${escape(input.rawHref)}" title="View the source">${icons.code}</a>\n` : ""}${config.edit && config.kind === "markdown" ? `<button class="cms-button cms-edit" type="button" data-cms-edit title="Edit in your editor (E)">${icons.edit}</button>\n` : ""}<button class="cms-button" type="button" data-cms-theme title="Change the theme">${icons.palette}</button>
 ${config.events ? '<span class="cms-live" title="Live reload is connecting"></span>\n' : ""}</div>
 </header>
 <div class="cms-layout">

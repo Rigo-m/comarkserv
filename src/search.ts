@@ -6,6 +6,8 @@ export interface SearchHeading {
   id: string;
   text: string;
   depth: number;
+  /** The line of the heading in the source file, from 1. */
+  line: number;
 }
 
 export interface SearchEntry {
@@ -78,7 +80,7 @@ export function extractOutline(source: string): Outline {
   let fence: string | undefined;
   let previous = "";
 
-  const add = (level: number, raw: string) => {
+  const add = (level: number, raw: string, line: number) => {
     const attributes = ATTRIBUTES.exec(raw);
     const text = plainText(attributes ? raw.slice(0, attributes.index) : raw);
     if (!text) return;
@@ -90,10 +92,16 @@ export function extractOutline(source: string): Outline {
     const count = counts.get(slug) ?? 0;
     counts.set(slug, count + 1);
     const id = customId(attributes?.[1]) ?? (count === 0 ? slug : `${slug}-${count}`);
-    headings.push({ id, text, depth: level });
+    headings.push({ id, text, depth: level, line });
   };
 
-  for (const line of body.split(/\r?\n/)) {
+  // The line numbers count the frontmatter too, so they match the source file.
+  const offset = frontmatter
+    ? frontmatter[0].split(/\r?\n/).length - (frontmatter[0].endsWith("\n") ? 1 : 0)
+    : 0;
+  const lines = body.split(/\r?\n/);
+  for (const [index, line] of lines.entries()) {
+    const number = offset + index + 1;
     const fenceMatch = FENCE.exec(line);
     if (fence) {
       if (
@@ -113,13 +121,13 @@ export function extractOutline(source: string): Outline {
     }
     const atx = ATX.exec(line);
     if (atx?.[1]) {
-      add(atx[1].length, atx[2] ?? "");
+      add(atx[1].length, atx[2] ?? "", number);
       previous = "";
       continue;
     }
     // A setext heading: a text line, then a line of `=` or `-`.
     if (previous && /^ {0,3}(=+|-+)[ \t]*$/.test(line) && !/^ {0,3}[-*+>]|^ {4}/.test(previous)) {
-      add(line.trim().startsWith("=") ? 1 : 2, previous.trim());
+      add(line.trim().startsWith("=") ? 1 : 2, previous.trim(), number - 1);
       previous = "";
       continue;
     }

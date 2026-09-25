@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
-import { networkInterfaces } from "node:os";
+import { networkInterfaces, tmpdir } from "node:os";
 import { styleText } from "node:util";
 import { defineCommand, runMain } from "citty";
-import { basename, dirname, relative, resolve } from "pathe";
+import { basename, dirname, join, relative, resolve } from "pathe";
 import { DEFAULT_PORT, startServer } from "./server.ts";
 import { findReadme } from "./site.ts";
 import { createThemeStore, OMARCHY_CURRENT } from "./themes.ts";
@@ -77,6 +77,11 @@ const serverArgs = {
     negativeDescription: "Do not watch the files",
   },
   "strict-port": { type: "boolean", description: "Stop when the port is in use" },
+  share: {
+    type: "boolean",
+    description:
+      "Share the pages at a public URL, through a Cloudflare tunnel. Anyone with the URL can read the files",
+  },
   silent: { type: "boolean", alias: "s", description: "Do not print the requests" },
   ...commonArgs,
 } as const;
@@ -90,11 +95,66 @@ interface ServeArgs {
   "line-numbers"?: boolean;
   dotfiles?: boolean;
   theme: string;
+  share?: boolean;
+}
+
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+async function qrCode(url: string): Promise<string> {
+  const { renderUnicodeCompact } = await import("uqr");
+  return renderUnicodeCompact(url)
+    .split("\n")
+    .map((line) => `  ${line}`)
+    .join("\n");
+}
+
+/**
+ * untun asks for consent before it installs cloudflared. With no terminal, its
+ * prompt answers yes, so comarkserv asks for an explicit yes in that case.
+ */
+function checkTunnelConsent(): void {
+  const untunDirectory = join(tmpdir(), "node-untun");
+  const installed =
+    existsSync(untunDirectory) &&
+    readdirSync(untunDirectory).some((name) => name.startsWith("cloudflared"));
+  if (installed || process.stdin.isTTY || process.env.UNTUN_ACCEPT_CLOUDFLARE_NOTICE) return;
+  fail(
+    "The first --share installs cloudflared, and you must accept the Cloudflare license first. " +
+      "Run the command in a terminal, where untun asks you. Or set UNTUN_ACCEPT_CLOUDFLARE_NOTICE=1 to accept the license.",
+  );
+}
+
+/** Starts a Cloudflare quick tunnel to the server and prints its public URL. */
+async function share(port: number, root: string, open: boolean): Promise<void> {
+  console.log(styleText("dim", "  Starting a public tunnel. This can take some seconds..."));
+  const { startTunnel } = await import("untun");
+  const tunnel = await startTunnel({ url: `http://127.0.0.1:${port}` }).catch((error: unknown) =>
+    fail(`The tunnel did not start: ${error instanceof Error ? error.message : String(error)}`),
+  );
+  if (!tunnel) fail("The tunnel did not start, so the pages are not shared.");
+  const url = await tunnel.getURL();
+  console.log(
+    [
+      "",
+      `  ${styleText("dim", "Public".padEnd(9))}${styleText("cyan", url)}`,
+      "",
+      await qrCode(url),
+      "",
+      styleText(
+        "yellow",
+        `  Anyone with this URL can read the files in ${display(root)}. The Edit button is off.`,
+      ),
+      styleText("dim", "  Press Ctrl+C to stop the server and the tunnel."),
+      "",
+    ].join("\n"),
+  );
+  if (open) openBrowser(url);
 }
 
 /** Serves a directory, or the directory of a markdown file, and prints the banner. */
 async function serve(target: string, args: ServeArgs, open: boolean): Promise<void> {
   if (!existsSync(target)) fail(`There is no file or directory at ${target}.`);
+  if (args.share) checkTunnelConsent();
   const isFile = statSync(target).isFile();
   const port = Number(args.port);
   if (!Number.isInteger(port) || port < 0 || port > 65_535)
@@ -106,11 +166,15 @@ async function serve(target: string, args: ServeArgs, open: boolean): Promise<vo
     .load(args.theme)
     .catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));
 
+  // A tunnel connects to 127.0.0.1, and localhost can resolve to ::1 only.
+  const host = args.share && args.host === "localhost" ? "127.0.0.1" : args.host;
   const server = await startServer({
     root: isFile ? dirname(target) : target,
     theme: args.theme,
     port,
-    host: args.host,
+    host,
+    // Other machines must not open files in the editor of this machine.
+    editor: LOCAL_HOSTS.has(host) && !args.share,
     strictPort: args["strict-port"],
     livereload: args.livereload,
     lineNumbers: args["line-numbers"],
@@ -144,7 +208,12 @@ async function serve(target: string, args: ServeArgs, open: boolean): Promise<vo
       styleText("yellow", `  Port ${port} is in use, so comarkserv uses port ${server.port}.\n`),
     );
   }
-  if (open) openBrowser(url);
+  if (args.host === "0.0.0.0" || args.host === "::") {
+    const [address] = networkUrls(server.port);
+    if (address) console.log(`${await qrCode(address)}\n`);
+  }
+  if (args.share) await share(server.port, server.handler.root, open);
+  else if (open) openBrowser(url);
 
   const stop = () => {
     void server.close().finally(() => process.exit(0));
@@ -158,7 +227,7 @@ const serveCommand = defineCommand({
     name: "comarkserv",
     version,
     description:
-      "Serve markdown as HTML, with live reload. Other commands: `comarkserv readme`, `comarkserv build`, `comarkserv themes`.",
+      "Serve markdown as HTML, with live reload. Other commands: `comarkserv readme`, `comarkserv cat`, `comarkserv build`, `comarkserv themes`.",
   },
   args: {
     path: {
@@ -235,10 +304,52 @@ const buildCommand = defineCommand({
   },
 });
 
+// Long output goes through less, as git does: -R keeps the colors, -F quits when
+// the text fits on one screen, and -X leaves the text on the screen.
+function page(text: string, pager: boolean): void {
+  if (!pager || !process.stdout.isTTY) {
+    process.stdout.write(text);
+    return;
+  }
+  const less = spawn("less", ["-R", "-F", "-X"], { stdio: ["pipe", "inherit", "inherit"] });
+  less.on("error", () => process.stdout.write(text));
+  less.stdin.on("error", () => {});
+  less.stdin.end(text);
+}
+
+const catCommand = defineCommand({
+  meta: { name: "comarkserv cat", version, description: "Show a markdown file in the terminal" },
+  args: {
+    file: { type: "positional", description: "The markdown file", required: true },
+    color: {
+      type: "boolean",
+      description: "Use colors. The default is on in a terminal, unless NO_COLOR is set",
+      negativeDescription: "Do not use colors",
+    },
+    pager: {
+      type: "boolean",
+      default: true,
+      description: "Show a long file in less",
+      negativeDescription: "Print the whole file",
+    },
+  },
+  async run({ args }) {
+    const path = resolve(args.file);
+    if (!existsSync(path) || !statSync(path).isFile()) fail(`There is no file at ${path}.`);
+    const source = readFileSync(path, "utf8");
+    const colors = args.color ?? (process.stdout.isTTY === true && !process.env.NO_COLOR);
+    // The terminal renderer loads only for this command.
+    const { createTerminalRenderer } = await import("./terminal.ts");
+    const width = Math.min(process.stdout.columns || 80, 100);
+    page(await createTerminalRenderer({ colors, width })(source), args.pager);
+  },
+});
+
 const themesCommand = defineCommand({
   meta: { name: "comarkserv themes", version, description: "List the themes for --theme" },
   args: {
     filter: { type: "positional", description: "Show only the themes with this text", default: "" },
+    json: { type: "boolean", description: "Print the list as JSON, for other tools" },
   },
   async run({ args }) {
     const entries = await createThemeStore()
@@ -257,6 +368,10 @@ const themesCommand = defineCommand({
     ];
     const filter = args.filter.toLowerCase();
     const shown = rows.filter((row) => `${row.id} ${row.name}`.toLowerCase().includes(filter));
+    if (args.json) {
+      console.log(JSON.stringify(shown.map(({ id, name }) => ({ id, name }))));
+      return;
+    }
     const width = Math.max(0, ...shown.map((row) => row.id.length));
     for (const row of shown) console.log(`${row.id.padEnd(width)}  ${styleText("dim", row.name)}`);
     console.log(
@@ -268,9 +383,42 @@ const themesCommand = defineCommand({
   },
 });
 
+const themeCommand = defineCommand({
+  meta: {
+    name: "comarkserv theme",
+    version,
+    description: "Show the name, the variant and the 16 colors of a theme",
+  },
+  args: {
+    id: { type: "positional", description: "The theme, as for --theme", required: true },
+    json: { type: "boolean", description: "Print the theme as JSON, for other tools" },
+  },
+  async run({ args }) {
+    const theme = await createThemeStore()
+      .load(args.id)
+      .catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));
+    if (!theme) fail("github is the built-in theme. It has no base16 colors.");
+    if (args.json) {
+      console.log(JSON.stringify(theme));
+      return;
+    }
+    console.log(`${styleText("bold", theme.name)} ${styleText("dim", `(${theme.variant})`)}`);
+    theme.colors.forEach((color, index) => {
+      const slot = `base0${index.toString(16).toUpperCase()}`;
+      const [r, g, b] = [1, 3, 5].map((start) =>
+        Number.parseInt(color.slice(start, start + 2), 16),
+      );
+      const swatch = process.stdout.isTTY ? `\x1b[48;2;${r};${g};${b}m    \x1b[0m ` : "";
+      console.log(`${swatch}${slot}  ${color}`);
+    });
+  },
+});
+
 // citty reads a path argument as a subcommand name, so the subcommands are found here.
 const argv = process.argv.slice(2);
 if (argv[0] === "build") await runMain(buildCommand, { rawArgs: argv.slice(1) });
 else if (argv[0] === "themes") await runMain(themesCommand, { rawArgs: argv.slice(1) });
 else if (argv[0] === "readme") await runMain(readmeCommand, { rawArgs: argv.slice(1) });
+else if (argv[0] === "cat") await runMain(catCommand, { rawArgs: argv.slice(1) });
+else if (argv[0] === "theme") await runMain(themeCommand, { rawArgs: argv.slice(1) });
 else await runMain(serveCommand, { rawArgs: argv });

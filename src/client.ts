@@ -11,6 +11,10 @@ export interface ClientConfig {
   events: string;
   /** The URL of the theme catalog, or an empty string when there is none. */
   themes: string;
+  /** The URL of the endpoint that opens the source in the editor, or an empty string when it is off. */
+  edit: string;
+  /** The source line of each heading, by heading id, so the editor opens at the section on the screen. */
+  lines?: Record<string, number>;
   /** The URL path of the source of this page, from the site root. Live reload compares changes with it. */
   source: string;
   /** The type of page. */
@@ -208,7 +212,8 @@ export function client(parse: typeof parseTheme): void {
       selectTab(label);
       return;
     }
-    if (target?.closest("[data-cms-theme]")) openPalette("theme");
+    if (target?.closest("[data-cms-edit]")) void openEditor();
+    else if (target?.closest("[data-cms-theme]")) openPalette("theme");
     else if (target?.closest("[data-cms-search]")) openPalette("search");
   });
 
@@ -226,6 +231,34 @@ export function client(parse: typeof parseTheme): void {
     for (const link of links) link.setAttribute("aria-current", String(link === active));
   };
   addEventListener("scroll", () => (spyFrame ||= requestAnimationFrame(spy)), { passive: true });
+
+  // Edit: opens the source in the editor, at the section at the top of the screen.
+  const editButton = doc.querySelector<HTMLButtonElement>("[data-cms-edit]");
+  const currentLine = () => {
+    let line = 1;
+    for (const heading of all<HTMLElement>(":is(h1, h2, h3, h4, h5, h6)[id]", content ?? doc)) {
+      if (heading.getBoundingClientRect().top > 120) break;
+      line = config.lines?.[heading.id] ?? line;
+    }
+    return line;
+  };
+  const openEditor = async () => {
+    if (!config.edit || config.kind !== "markdown") return;
+    const response = await fetch(config.edit, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-comarkserv-edit": "1" },
+      body: JSON.stringify({ path: config.source, line: currentLine() }),
+    }).catch(() => undefined);
+    if (!editButton) return;
+    const error = response?.ok
+      ? undefined
+      : ((await response?.json().catch(() => undefined)) as { error?: string } | undefined)?.error;
+    editButton.dataset.state = response?.ok ? "ok" : "error";
+    editButton.title = response?.ok
+      ? "Edit in your editor (E)"
+      : (error ?? "The editor did not open");
+    setTimeout(() => delete editButton.dataset.state, 1500);
+  };
 
   // Fuzzy matching for the palette.
   const isBoundary = (char: string | undefined) => !char || /[\s/._\-›:]/.test(char);
@@ -611,6 +644,12 @@ export function client(parse: typeof parseTheme): void {
     const typing =
       event.target instanceof HTMLElement &&
       event.target.closest("input, textarea, select, [contenteditable]");
+    const modifier = event.metaKey || event.ctrlKey || event.altKey;
+    if (event.key === "e" && !typing && !modifier && !palette?.open) {
+      event.preventDefault();
+      void openEditor();
+      return;
+    }
     if ((event.key === "k" && (event.metaKey || event.ctrlKey)) || (event.key === "/" && !typing)) {
       event.preventDefault();
       if (palette?.open) palette.close();
@@ -650,6 +689,9 @@ export function client(parse: typeof parseTheme): void {
     const anchor = content.children[start] ?? null;
     for (const child of added) content.insertBefore(doc.importNode(child, true), anchor);
     pristine = nextPristine;
+    // An edit can move the headings, so the Edit button needs the new lines.
+    const nextConfig = next.getElementById("cms-config")?.textContent;
+    if (nextConfig) config.lines = (JSON.parse(nextConfig) as ClientConfig).lines;
     enhance(content);
     doc.title = next.title;
     const toc = doc.getElementById("cms-toc");

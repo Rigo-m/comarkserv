@@ -113,7 +113,7 @@ graph LR
 
 | Feature      | markserv | comarkserv |
 | ------------ | :------: | :--------: |
-| Live reload  |   Page   |   Block    |
+| Live reload  | Content  |   Blocks   |
 | Search       |    No    |    Yes     |
 | Static build |    No    |    Yes     |
 | Components   |    No    |    Yes     |

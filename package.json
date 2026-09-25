@@ -51,6 +51,7 @@
     "bench": "vp run build && node bench/run.ts"
   },
   "dependencies": {
+    "@comark/ansi": "^0.7.0",
     "@comark/html": "^0.7.0",
     "@twinkleplop/theme-github": "^0.2.1",
     "beautiful-mermaid": "^1.1.3",
@@ -60,6 +61,7 @@
   },
   "devDependencies": {
     "@twinkleplop/bash": "^0.1.4",
+    "@twinkleplop/core": "0.2.1",
     "@twinkleplop/css": "^0.1.4",
     "@twinkleplop/go": "^0.1.4",
     "@twinkleplop/html": "^0.1.4",
@@ -80,9 +82,12 @@
     "chokidar": "^5.0.0",
     "citty": "^0.2.2",
     "get-port-please": "^3.2.0",
+    "launch-editor": "^2.14.1",
     "pathe": "^2.0.3",
     "tinyglobby": "^0.2.17",
     "typescript": "^7.0.2",
+    "untun": "^0.2.2",
+    "uqr": "^0.1.3",
     "vite-plus": "catalog:"
   },
   "devEngines": {
@@ -117,9 +122,14 @@
     "citty": "0.2.2",
     "fdir": "6.5.0",
     "get-port-please": "3.2.0",
+    "launch-editor": "2.14.1",
     "pathe": "2.0.3",
+    "picocolors": "1.1.1",
     "picomatch": "4.0.7",
     "readdirp": "5.1.1",
-    "tinyglobby": "0.2.17"
+    "shell-quote": "1.10.0",
+    "tinyglobby": "0.2.17",
+    "untun": "0.2.2",
+    "uqr": "0.1.3"
   }
 }

@@ -170,6 +170,7 @@ export async function build(options: BuildOptions = {}): Promise<BuildResult> {
         search: `${base}search.json`,
         events: "",
         themes: catalog ? `${base}themes/catalog.json` : "",
+        edit: "",
         source: `/${url}`,
         kind,
       },

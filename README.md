@@ -27,6 +27,9 @@ npx comarkserv ./docs
 - **Modern markdown.** GFM, GitHub alerts, Comark components, code with titles and line highlights, math and Mermaid diagrams. The server renders math and diagrams, so the browser loads no JavaScript for them.
 - **Search.** <kbd>⌘</kbd> <kbd>K</kbd> finds pages and headings in the whole folder.
 - **580+ themes.** All base16, base24 and Omarchy themes, loaded when you choose one. comarkserv can also follow your Omarchy theme live.
+- **Edit in place.** The Edit button, or <kbd>E</kbd>, opens the file in your editor at the section on the screen.
+- **Share.** `--share` gives your colleagues a public URL and a QR code, through a Cloudflare tunnel.
+- **Terminal.** `comarkserv cat` shows a markdown file in the terminal, with colored code and diagrams.
 - **Static sites.** `comarkserv build` makes a site that works on any static host.
 - **A library too.** A web-standard `fetch` handler for srvx, Bun, Deno or any server.
 
@@ -37,6 +40,8 @@ npx comarkserv                   # serve the current directory
 npx comarkserv ./docs --open     # serve a directory and open the browser
 npx comarkserv ./docs/guide.md   # serve the directory of a file, and open that file
 npx comarkserv readme            # open the closest README, from here or a parent directory
+npx comarkserv ./docs --share    # share the folder with a public URL
+npx comarkserv cat README.md     # show a file in the terminal
 ```
 
 Or install it:
@@ -69,6 +74,9 @@ comarkserv needs Node.js 20.19 or later.
 | Live Omarchy theme sync                                   | —                          | ✓                                                                |
 | Includes and templates (Markdown, HTML, LESS)             | ✓ (`--templates`)          | —                                                                |
 | Open the closest README                                   | ✓ (`readme`)               | ✓ (`comarkserv readme`)                                          |
+| Open the file in your editor, at the current section      | —                          | ✓                                                                |
+| Share with a public URL and a QR code                     | —                          | ✓ (`--share`)                                                    |
+| Show markdown in the terminal                             | —                          | ✓ (`comarkserv cat`)                                             |
 | Static site build                                         | —                          | ✓                                                                |
 | Library API                                               | —                          | ✓                                                                |
 
@@ -107,17 +115,18 @@ _macOS 26.2 (arm64), Apple M4 Pro, 24 GB, Node.js 24.21.0, 2026-09-25. Run `vp r
 comarkserv [path] [options]
 ```
 
-| Option                | Default     | Effect                                                           |
-| --------------------- | ----------- | ---------------------------------------------------------------- |
-| `-p`, `--port <port>` | `8642`      | The port. When it is in use, comarkserv uses the next free port. |
-| `--strict-port`       | off         | Stop when the port is in use.                                    |
-| `-H`, `--host <host>` | `localhost` | The host. Use `0.0.0.0` to accept connections from the network.  |
-| `-o`, `--open`        | off         | Open the page in the browser.                                    |
-| `--theme <name>`      | `github`    | The default theme. See [Themes](#themes).                        |
-| `--no-livereload`     | on          | Do not watch the files.                                          |
-| `--line-numbers`      | off         | Show line numbers on all code blocks.                            |
-| `--dotfiles`          | off         | Serve and list dotfiles, such as `.github/`.                     |
-| `-s`, `--silent`      | off         | Do not print the requests.                                       |
+| Option                | Default     | Effect                                                                                |
+| --------------------- | ----------- | ------------------------------------------------------------------------------------- |
+| `-p`, `--port <port>` | `8642`      | The port. When it is in use, comarkserv uses the next free port.                      |
+| `--strict-port`       | off         | Stop when the port is in use.                                                         |
+| `-H`, `--host <host>` | `localhost` | The host. Use `0.0.0.0` to accept connections from the network.                       |
+| `-o`, `--open`        | off         | Open the page in the browser.                                                         |
+| `--theme <name>`      | `github`    | The default theme. See [Themes](#themes).                                             |
+| `--no-livereload`     | on          | Do not watch the files.                                                               |
+| `--line-numbers`      | off         | Show line numbers on all code blocks.                                                 |
+| `--dotfiles`          | off         | Serve and list dotfiles, such as `.github/`.                                          |
+| `--share`             | off         | Share the pages at a public URL. See [Share with colleagues](#share-with-colleagues). |
+| `-s`, `--silent`      | off         | Do not print the requests.                                                            |
 
 Add `?raw` to the URL of a markdown file to get its source. The code button in the top bar does the same.
 
@@ -143,12 +152,38 @@ comarkserv readme ./src      # from another directory
 
 `comarkserv readme` looks for a README in the directory, then in each parent directory, and serves the first one that it finds. It opens the browser. Use `--no-open` to stop that. It accepts the same options as `comarkserv`.
 
+### Share with colleagues
+
+```bash
+comarkserv ./docs --share
+```
+
+`--share` starts a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) with [untun](https://github.com/unjs/untun), and prints a public URL and a QR code.
+
+- Anyone with the URL can read the files in the folder, until you stop comarkserv. Dotfiles stay hidden.
+- The Edit button is off, so nobody can open files in your editor.
+- The first `--share` installs `cloudflared`. untun asks you to accept the Cloudflare license first, so run it one time in a terminal. With no terminal, comarkserv stops, unless you set `UNTUN_ACCEPT_CLOUDFLARE_NOTICE=1` to accept the license.
+
+For a colleague on the same network, `--host 0.0.0.0` is enough. comarkserv then prints the network URL and a QR code for your phone.
+
+### Show markdown in the terminal
+
+```bash
+comarkserv cat README.md
+comarkserv cat docs/guide.md --no-pager | head
+```
+
+`comarkserv cat` uses the same parser and the same twinkleplop grammars as the server. It colors code, draws Mermaid diagrams as text, and shows alerts, tables and footnotes. A long file opens in `less`. Use `--no-pager` to print it, and `--no-color` to remove the colors.
+
 ### List the themes
 
 ```bash
 comarkserv themes            # all themes
 comarkserv themes gruvbox    # the themes with "gruvbox" in the id or the name
+comarkserv theme base16:nord # the colors of one theme
 ```
+
+Add `--json` to both commands for output that other tools can read.
 
 ### Keyboard shortcuts
 
@@ -157,11 +192,20 @@ comarkserv themes gruvbox    # the themes with "gruvbox" in the id or the name
 | <kbd>⌘</kbd> <kbd>K</kbd>, <kbd>Ctrl</kbd> <kbd>K</kbd> or <kbd>/</kbd> | Search the pages and headings                                                                |
 | <kbd>↑</kbd> <kbd>↓</kbd>, <kbd>↵</kbd>                                 | Move in the results and open one                                                             |
 | <kbd>⌘</kbd> <kbd>↵</kbd>                                               | Open the result in a new tab                                                                 |
+| <kbd>E</kbd>                                                            | Open the file in your editor, at the section at the top of the screen                        |
 | The palette button in the top bar                                       | Choose a theme: <kbd>↑</kbd> <kbd>↓</kbd> preview, <kbd>↵</kbd> keep, <kbd>esc</kbd> restore |
 
 ### Raycast
 
-Two [Raycast script commands](https://github.com/raycast/script-commands) are in [extras/raycast](./extras/raycast):
+The [Raycast extension](./extras/raycast-extension) has three commands:
+
+- **Preview Markdown** opens the file or folder that is selected in Finder.
+- **Markdown Previews** shows the running previews and the recent folders. You can open, copy, stop and restart them.
+- **Search Markdown Themes** searches the 580+ themes, shows their colors, and sets the default theme for new previews.
+
+The extension is not in the Raycast Store yet. To use it now, run `npm install && npm run dev` in `extras/raycast-extension`. Raycast then loads it.
+
+Two [Raycast script commands](https://github.com/raycast/script-commands) in [extras/raycast](./extras/raycast) do the basic part with no extension:
 
 - **Preview Markdown** opens the file or folder that you select in Finder, or a path that you type. Each folder gets its own server, and a second preview of the same folder uses the server that runs.
 - **Stop Markdown Previews** stops these servers.
@@ -285,6 +329,8 @@ serve({ fetch: app.fetch });
 - `theme`: the default theme, as for `--theme`
 - `themeStore`: replaces the store that downloads and caches the themes, for example to use no network
 - `omarchyPath`: the `colors.toml` of the current Omarchy theme
+- `editor`: show the Edit button (default `true`). Turn it off when other machines can reach the server.
+- `openEditor`: replaces the function that opens a file in the editor
 
 ## How it stays fast
 
@@ -303,6 +349,8 @@ Each response has a `Server-Timing` header with the render time.
 ## Security
 
 comarkserv is a tool for your own files. It binds to `localhost` by default, and it does not serve dotfiles or files outside the root. Markdown can contain raw HTML and scripts, as on markserv. Do not serve markdown that you do not trust on a network.
+
+The Edit button opens files in your editor, so its endpoint accepts only a POST from the page itself: the host name must be local (against DNS rebinding), the origin must match, and a custom header must be present (so another site needs a preflight, which the server does not answer). The path must be a visible file in the root. The CLI turns the button off for `--share` and for a host that is not local.
 
 Theme files come from the network, and their colors go into CSS. So comarkserv accepts only hex colors from a theme, in the server and in the browser. The theme endpoint of the server downloads files only from the two theme repositories, so it is not an open proxy.
 

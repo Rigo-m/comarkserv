@@ -17,5 +17,6 @@
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
     "skipLibCheck": true
-  }
+  },
+  "exclude": ["node_modules", "dist", "bench/.cache", "extras/raycast-extension"]
 }

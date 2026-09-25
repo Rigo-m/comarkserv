@@ -43,6 +43,15 @@ describe("extractOutline", () => {
     );
   });
 
+  test("records the source line of each heading, after the frontmatter", () => {
+    const source = "---\ntitle: T\n---\n# One\n\ntext\n\n## Two\n\nSetext\n------\n";
+    expect(extractOutline(source).headings.map((heading) => [heading.text, heading.line])).toEqual([
+      ["One", 4],
+      ["Two", 8],
+      ["Setext", 10],
+    ]);
+  });
+
   test("takes the title from the frontmatter, then from the first h1", () => {
     expect(extractOutline("---\ntitle: 'Quoted'\n---\n# H1\n").title).toBe("Quoted");
     expect(extractOutline("Intro\n\n# The *title*\n").title).toBe("The title");

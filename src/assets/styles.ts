@@ -118,6 +118,8 @@ kbd {
   background: var(--cms-subtle);
 }
 .cms-search kbd { margin-left: auto; }
+.cms-edit[data-state="ok"] { color: var(--cms-tip); }
+.cms-edit[data-state="error"] { color: var(--cms-caution); }
 .cms-live {
   width: 8px;
   height: 8px;

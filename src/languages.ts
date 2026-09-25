@@ -1,5 +1,8 @@
+import type { TokenizeResult } from "@twinkleplop/core";
+
 interface LanguageModule {
   language: () => Highlighter;
+  tokenize: () => (input: string) => TokenizeResult;
 }
 
 export type LanguageId =
@@ -109,6 +112,33 @@ export function loadLanguage(id: LanguageId): Promise<Highlighter> {
     });
     promise.catch(() => pending.delete(id));
     pending.set(id, promise);
+  }
+  return promise;
+}
+
+/** A token of a grammar: its type, such as `keyword`, and its text. */
+export interface Token {
+  type: string;
+  value: string;
+  start: number;
+  end: number;
+}
+
+/** A tokenizer: it returns the tokens of the code. The gaps between tokens are plain text. */
+export type Tokenizer = (code: string) => Token[];
+
+const tokenizers = new Map<LanguageId, Promise<Tokenizer>>();
+
+/** Loads the tokenizer of a grammar, for output that is not HTML, such as a terminal. */
+export function loadTokenizer(id: LanguageId): Promise<Tokenizer> {
+  let promise = tokenizers.get(id);
+  if (!promise) {
+    promise = Promise.all([loaders[id](), import("@twinkleplop/core")]).then(([module, core]) => {
+      const tokenize = module.tokenize();
+      return (code: string) => core.tokens_to_named(tokenize(code), code);
+    });
+    promise.catch(() => tokenizers.delete(id));
+    tokenizers.set(id, promise);
   }
   return promise;
 }

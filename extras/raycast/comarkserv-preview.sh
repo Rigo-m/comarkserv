@@ -88,7 +88,8 @@ if [ -z "$url" ]; then
     echo "comarkserv did not start. See $log"
     exit 1
   fi
-  echo "$pid $url" > "$state/$key"
+  # Line 1: the process and the URL. Line 2: the folder, for the Raycast extension.
+  printf '%s %s\n%s\n' "$pid" "$url" "$root" > "$state/$key"
 fi
 
 if [ -n "$file" ]; then

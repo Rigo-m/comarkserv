@@ -10,7 +10,8 @@ import type { ClientConfig } from "./client.ts";
 import type { MarkdownRenderer, MarkdownRendererOptions, RenderedMarkdown } from "./markdown.ts";
 import { injectClient, renderListing, renderPage, renderReadme, renderStatus } from "./page.ts";
 import type { PageAssets, PageInput } from "./page.ts";
-import { createSearchIndex } from "./search.ts";
+import type { OpenEditor } from "./editor.ts";
+import { createSearchIndex, extractOutline } from "./search.ts";
 import {
   crumbsFor,
   hasHiddenSegment,
@@ -45,6 +46,13 @@ export interface ComarkservOptions extends MarkdownRendererOptions {
   themeStore?: ThemeStore;
   /** The `colors.toml` of the current Omarchy theme. @default ~/.local/state/omarchy/current/theme/colors.toml */
   omarchyPath?: string;
+  /**
+   * Show an Edit button that opens the file in the editor of the user. Turn it off
+   * when other machines can reach the server. @default true
+   */
+  editor?: boolean;
+  /** Replaces the function that opens a file in the editor. */
+  openEditor?: OpenEditor;
 }
 
 export interface ComarkservHandler {
@@ -70,9 +78,12 @@ interface Body {
 interface Timed {
   rendered: RenderedMarkdown;
   ms: number;
+  /** The source line of each heading, by heading id, for the Edit button. */
+  lines: Record<string, number>;
 }
 
 const HTML = "text/html; charset=utf-8";
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const MIN_COMPRESS_SIZE = 1024;
 const IMMUTABLE = "public, max-age=31536000, immutable";
 
@@ -186,6 +197,11 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
   const root = resolve(options.root ?? process.cwd());
   const rootName = basename(root) || root;
   const livereload = options.livereload ?? true;
+  const editor = options.editor ?? true;
+  // launch-editor loads on the first request that needs it.
+  const openEditor: OpenEditor =
+    options.openEditor ??
+    (async (file, line) => (await import("./editor.ts")).openInEditor(file, line));
   const dotfiles = options.dotfiles ?? false;
   // Comark takes about 40 ms to import, so it loads after the server starts, not before.
   let renderer: Promise<MarkdownRenderer> | undefined;
@@ -214,13 +230,19 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
     js: `${INTERNAL_PREFIX}app.js?v=${assets["app.js"].version}`,
     katex: `${INTERNAL_PREFIX}katex/katex.min.css?v=${assets.katexVersion}`,
   };
-  const config = (source: string, kind: ClientConfig["kind"]): ClientConfig => ({
+  const config = (
+    source: string,
+    kind: ClientConfig["kind"],
+    lines?: Record<string, number>,
+  ): ClientConfig => ({
     root: "/",
     search: `${INTERNAL_PREFIX}search.json`,
     events: livereload ? `${INTERNAL_PREFIX}events` : "",
     themes: `${INTERNAL_PREFIX}themes/catalog.json`,
+    edit: editor ? `${INTERNAL_PREFIX}edit` : "",
     source,
     kind,
+    ...(lines ? { lines } : {}),
   });
   const page = async (input: Omit<PageInput, "assets" | "theme">) =>
     renderPage({ ...input, assets: pageAssets, theme: await themes.current() });
@@ -264,7 +286,10 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
       const started = performance.now();
       const [render, source] = await Promise.all([getRenderer(), readFile(path, "utf8")]);
       const rendered = await render(source);
-      return { rendered, ms: performance.now() - started };
+      const lines = Object.fromEntries(
+        extractOutline(source).headings.map((heading) => [heading.id, heading.line]),
+      );
+      return { rendered, ms: performance.now() - started, lines };
     })();
     renders.set(path, { stamp, result });
     result.catch(() => renders.delete(path));
@@ -336,7 +361,7 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
       features: rendered.features,
       rawHref: `${encodeURI(source)}?raw`,
       footer: `rendered in ${ms.toFixed(1)} ms`,
-      config: config(source, "markdown"),
+      config: config(source, "markdown", timed.lines),
     });
     const body = makeBody(html, HTML);
     pages.set(pathname, { stamp, body, ms });
@@ -437,6 +462,47 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
     });
   };
 
+  // Opens a file in the editor. A web page from another site must not do this, so
+  // the request must come to a local host name (against DNS rebinding), from this
+  // origin, with a custom header (a cross-origin request with it needs a preflight,
+  // and the server answers no preflight).
+  const edit = async (request: Request): Promise<Response> => {
+    if (!editor) return new Response("Not found", { status: 404 });
+    if (request.method !== "POST") {
+      return new Response("Method not allowed", { status: 405, headers: { allow: "POST" } });
+    }
+    const url = new URL(request.url);
+    const origin = request.headers.get("origin");
+    if (
+      !LOOPBACK_HOSTS.has(url.hostname) ||
+      (origin !== null && origin !== url.origin) ||
+      request.headers.get("x-comarkserv-edit") !== "1"
+    ) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    const body = (await request.json().catch(() => ({}))) as { path?: unknown; line?: unknown };
+    const pathname = typeof body.path === "string" ? body.path : "";
+    const visible =
+      pathname.startsWith("/") &&
+      !pathname.includes("\0") &&
+      (dotfiles || !hasHiddenSegment(pathname));
+    const path = resolve(root, `.${pathname}`);
+    const inside = path === root || path.startsWith(root + sep);
+    const info = visible && inside ? await stat(path).catch(() => undefined) : undefined;
+    if (!info?.isFile()) return new Response("Not found", { status: 404 });
+    const line =
+      typeof body.line === "number" && Number.isInteger(body.line) && body.line > 0
+        ? body.line
+        : undefined;
+    try {
+      await openEditor(path, line);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return Response.json({ error: message }, { status: 500 });
+    }
+    return new Response(null, { status: 204 });
+  };
+
   const internal = async (request: Request, name: string): Promise<Response> => {
     if (name === "app.css" || name === "app.js") {
       return respond(request, assetBodies[name], { headers: { "cache-control": IMMUTABLE } });
@@ -458,6 +524,7 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
   };
 
   const handle = async (request: Request): Promise<Response> => {
+    if (new URL(request.url).pathname === `${INTERNAL_PREFIX}edit`) return edit(request);
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("Method not allowed", { status: 405, headers: { allow: "GET, HEAD" } });
     }
