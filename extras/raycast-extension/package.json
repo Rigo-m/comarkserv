@@ -4,7 +4,7 @@
   "title": "Comarkserv",
   "description": "Preview markdown files and folders in the browser with comarkserv: live reload, search, 580+ themes.",
   "icon": "extension-icon.png",
-  "author": "rigo-m",
+  "author": "matteo_rigoni",
   "categories": [
     "Developer Tools",
     "Documentation"
