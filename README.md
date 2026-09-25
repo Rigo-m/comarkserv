@@ -84,17 +84,17 @@ comarkserv needs Node.js 20.19 or later.
 
 <!-- bench:start -->
 
-|                                 |   comarkserv 0.1.0 |      markserv 1.20.0 | comarkserv  |
-| ------------------------------- | -----------------: | -------------------: | ----------- |
-| Install size                    | 23 MB, 29 packages | 277 MB, 277 packages | 12.1× less  |
-| Startup, to the first response  |             132 ms |               239 ms | 1.8× faster |
-| Memory at idle (RSS)            |              90 MB |               112 MB | 1.2× less   |
-| First render of a page          |              22 ms |                33 ms | 1.5× faster |
-| Page, repeated request (median) |             0.3 ms |               1.7 ms | 6.3× faster |
-| Page after an edit (median)     |             1.6 ms |               1.3 ms | 1.3× slower |
-| Large page, 301 KB (median)     |             4.2 ms |                39 ms | 9.1× faster |
-| Throughput, 16 connections      |        10981 req/s |           1152 req/s | 9.5× faster |
-| Peak memory under load (RSS)    |             327 MB |               371 MB | 1.1× less   |
+|                                 |   comarkserv 0.1.0 |      markserv 1.20.0 | comarkserv     |
+| ------------------------------- | -----------------: | -------------------: | -------------- |
+| Install size                    | 23 MB, 29 packages | 277 MB, 277 packages | 12.1× less     |
+| Startup, to the first response  |             132 ms |               239 ms | 1.8× faster    |
+| Memory at idle (RSS)            |              90 MB |               112 MB | 1.2× less      |
+| First render of a page          |              22 ms |                33 ms | 1.5× faster    |
+| Page, repeated request (median) |             0.3 ms |               1.7 ms | 6.3× faster    |
+| Page after an edit (median)     |             1.6 ms |               1.3 ms | about the same |
+| Large page, 301 KB (median)     |             4.2 ms |                39 ms | 9.1× faster    |
+| Throughput, 16 connections      |        10981 req/s |           1152 req/s | 9.5× faster    |
+| Peak memory under load (RSS)    |             327 MB |               371 MB | 1.1× less      |
 
 _macOS 26.2 (arm64), Apple M4 Pro, 24 GB, Node.js 24.21.0, 2026-09-25. Run `vp run bench` to measure on your machine._
 <!-- bench:end -->
