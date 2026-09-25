@@ -1,6 +1,6 @@
 import type { Dirent } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 import type { Crumb, EntryKind, ListingEntry } from "./page.ts";
 
 export const MARKDOWN_EXTENSIONS: ReadonlySet<string> = new Set([
@@ -157,4 +157,23 @@ export async function mapLimit<T, R>(
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return results;
+}
+
+const README_EXTENSIONS = ["md", "markdown", "mdc", "mdown", "mkd"];
+
+/**
+ * Returns the closest README: in `start`, or else in the first parent directory
+ * that has one. The name can have any case. `README.md` comes before the other
+ * markdown extensions.
+ */
+export async function findReadme(start: string): Promise<string | undefined> {
+  for (let directory = start; ; directory = dirname(directory)) {
+    // A file has no entries, so the search continues in its directory.
+    const names = await readdir(directory).catch((): string[] => []);
+    for (const extension of README_EXTENSIONS) {
+      const name = names.find((entry) => entry.toLowerCase() === `readme.${extension}`);
+      if (name) return join(directory, name);
+    }
+    if (dirname(directory) === directory) return undefined;
+  }
 }

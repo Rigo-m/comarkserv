@@ -7,6 +7,7 @@ import { styleText } from "node:util";
 import { defineCommand, runMain } from "citty";
 import { basename, dirname, relative, resolve } from "pathe";
 import { DEFAULT_PORT, startServer } from "./server.ts";
+import { findReadme } from "./site.ts";
 import { createThemeStore, OMARCHY_CURRENT } from "./themes.ts";
 
 const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
@@ -56,12 +57,108 @@ const commonArgs = {
   },
 } as const;
 
+const serverArgs = {
+  port: {
+    type: "string",
+    alias: "p",
+    description: "The port. When it is in use, comarkserv uses the next free port",
+    default: String(DEFAULT_PORT),
+  },
+  host: {
+    type: "string",
+    alias: "H",
+    description: "The host. Use 0.0.0.0 to accept connections from the network",
+    default: "localhost",
+  },
+  livereload: {
+    type: "boolean",
+    default: true,
+    description: "Update open pages when files change",
+    negativeDescription: "Do not watch the files",
+  },
+  "strict-port": { type: "boolean", description: "Stop when the port is in use" },
+  silent: { type: "boolean", alias: "s", description: "Do not print the requests" },
+  ...commonArgs,
+} as const;
+
+interface ServeArgs {
+  port: string;
+  host: string;
+  livereload: boolean;
+  "strict-port"?: boolean;
+  silent?: boolean;
+  "line-numbers"?: boolean;
+  dotfiles?: boolean;
+  theme: string;
+}
+
+/** Serves a directory, or the directory of a markdown file, and prints the banner. */
+async function serve(target: string, args: ServeArgs, open: boolean): Promise<void> {
+  if (!existsSync(target)) fail(`There is no file or directory at ${target}.`);
+  const isFile = statSync(target).isFile();
+  const port = Number(args.port);
+  if (!Number.isInteger(port) || port < 0 || port > 65_535)
+    fail("--port must be a number from 0 to 65535.");
+
+  // The theme loads before the server starts, so a typo stops here with a clear message.
+  // The load also fills the cache, so the first page does not wait for the network.
+  const theme = await createThemeStore()
+    .load(args.theme)
+    .catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));
+
+  const server = await startServer({
+    root: isFile ? dirname(target) : target,
+    theme: args.theme,
+    port,
+    host: args.host,
+    strictPort: args["strict-port"],
+    livereload: args.livereload,
+    lineNumbers: args["line-numbers"],
+    dotfiles: args.dotfiles,
+    log: !args.silent,
+  }).catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));
+  const url = isFile ? new URL(encodeURIComponent(basename(target)), server.url).href : server.url;
+
+  const label = (name: string) => styleText("dim", name.padEnd(9));
+  const lines = [
+    "",
+    `  ${styleText("bold", styleText("magenta", "comarkserv"))} ${styleText("dim", `v${version}`)}  ` +
+      styleText("dim", `ready in ${Math.round(performance.now())} ms`),
+    "",
+    `  ${label("Local")}${styleText("cyan", url)}`,
+    ...(args.host === "0.0.0.0" || args.host === "::"
+      ? networkUrls(server.port).map(
+          (address) => `  ${label("Network")}${styleText("cyan", address)}`,
+        )
+      : []),
+    `  ${label("Root")}${display(server.handler.root)}`,
+    `  ${label("Reload")}${args.livereload ? "on" : "off"}`,
+    `  ${label("Theme")}${theme ? `${theme.name} ${styleText("dim", `(${args.theme})`)}` : "GitHub"}`,
+    "",
+    styleText("dim", "  Press Ctrl+C to stop."),
+    "",
+  ];
+  console.log(lines.join("\n"));
+  if (server.port !== port && port !== 0) {
+    console.log(
+      styleText("yellow", `  Port ${port} is in use, so comarkserv uses port ${server.port}.\n`),
+    );
+  }
+  if (open) openBrowser(url);
+
+  const stop = () => {
+    void server.close().finally(() => process.exit(0));
+  };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+}
+
 const serveCommand = defineCommand({
   meta: {
     name: "comarkserv",
     version,
     description:
-      "Serve markdown as HTML, with live reload. For a static site, run `comarkserv build --help`.",
+      "Serve markdown as HTML, with live reload. Other commands: `comarkserv readme`, `comarkserv build`, `comarkserv themes`.",
   },
   args: {
     path: {
@@ -69,90 +166,35 @@ const serveCommand = defineCommand({
       description: "The directory or markdown file to serve",
       default: ".",
     },
-    port: {
-      type: "string",
-      alias: "p",
-      description: "The port. When it is in use, comarkserv uses the next free port",
-      default: String(DEFAULT_PORT),
-    },
-    host: {
-      type: "string",
-      alias: "H",
-      description: "The host. Use 0.0.0.0 to accept connections from the network",
-      default: "localhost",
-    },
     open: { type: "boolean", alias: "o", description: "Open the page in the browser" },
-    livereload: {
+    ...serverArgs,
+  },
+  run: ({ args }) => serve(resolve(args.path), args, args.open === true),
+});
+
+const readmeCommand = defineCommand({
+  meta: {
+    name: "comarkserv readme",
+    version,
+    description:
+      "Serve the closest README: in the directory, or in the first parent directory that has one",
+  },
+  args: {
+    from: { type: "positional", description: "The directory to search from", default: "." },
+    open: {
       type: "boolean",
+      alias: "o",
       default: true,
-      description: "Update open pages when files change",
-      negativeDescription: "Do not watch the files",
+      description: "Open the README in the browser",
+      negativeDescription: "Do not open the browser",
     },
-    "strict-port": { type: "boolean", description: "Stop when the port is in use" },
-    silent: { type: "boolean", alias: "s", description: "Do not print the requests" },
-    ...commonArgs,
+    ...serverArgs,
   },
   async run({ args }) {
-    const target = resolve(args.path);
-    if (!existsSync(target)) fail(`There is no file or directory at ${target}.`);
-    const isFile = statSync(target).isFile();
-    const port = Number(args.port);
-    if (!Number.isInteger(port) || port < 0 || port > 65_535)
-      fail("--port must be a number from 0 to 65535.");
-
-    // The theme loads before the server starts, so a typo stops here with a clear message.
-    // The load also fills the cache, so the first page does not wait for the network.
-    const theme = await createThemeStore()
-      .load(args.theme)
-      .catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));
-
-    const server = await startServer({
-      root: isFile ? dirname(target) : target,
-      theme: args.theme,
-      port,
-      host: args.host,
-      strictPort: args["strict-port"],
-      livereload: args.livereload,
-      lineNumbers: args["line-numbers"],
-      dotfiles: args.dotfiles,
-      log: !args.silent,
-    }).catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));
-    const url = isFile
-      ? new URL(encodeURIComponent(basename(target)), server.url).href
-      : server.url;
-
-    const label = (name: string) => styleText("dim", name.padEnd(9));
-    const lines = [
-      "",
-      `  ${styleText("bold", styleText("magenta", "comarkserv"))} ${styleText("dim", `v${version}`)}  ` +
-        styleText("dim", `ready in ${Math.round(performance.now())} ms`),
-      "",
-      `  ${label("Local")}${styleText("cyan", url)}`,
-      ...(args.host === "0.0.0.0" || args.host === "::"
-        ? networkUrls(server.port).map(
-            (address) => `  ${label("Network")}${styleText("cyan", address)}`,
-          )
-        : []),
-      `  ${label("Root")}${display(server.handler.root)}`,
-      `  ${label("Reload")}${args.livereload ? "on" : "off"}`,
-      `  ${label("Theme")}${theme ? `${theme.name} ${styleText("dim", `(${args.theme})`)}` : "GitHub"}`,
-      "",
-      styleText("dim", "  Press Ctrl+C to stop."),
-      "",
-    ];
-    console.log(lines.join("\n"));
-    if (server.port !== port && port !== 0) {
-      console.log(
-        styleText("yellow", `  Port ${port} is in use, so comarkserv uses port ${server.port}.\n`),
-      );
-    }
-    if (args.open) openBrowser(url);
-
-    const stop = () => {
-      void server.close().finally(() => process.exit(0));
-    };
-    process.once("SIGINT", stop);
-    process.once("SIGTERM", stop);
+    const start = resolve(args.from);
+    const readme = await findReadme(start);
+    if (!readme) fail(`There is no README in ${start} or in a parent directory.`);
+    await serve(readme, args, args.open);
   },
 });
 
@@ -230,4 +272,5 @@ const themesCommand = defineCommand({
 const argv = process.argv.slice(2);
 if (argv[0] === "build") await runMain(buildCommand, { rawArgs: argv.slice(1) });
 else if (argv[0] === "themes") await runMain(themesCommand, { rawArgs: argv.slice(1) });
+else if (argv[0] === "readme") await runMain(readmeCommand, { rawArgs: argv.slice(1) });
 else await runMain(serveCommand, { rawArgs: argv });

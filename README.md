@@ -36,6 +36,7 @@ npx comarkserv ./docs
 npx comarkserv                   # serve the current directory
 npx comarkserv ./docs --open     # serve a directory and open the browser
 npx comarkserv ./docs/guide.md   # serve the directory of a file, and open that file
+npx comarkserv readme            # open the closest README, from here or a parent directory
 ```
 
 Or install it:
@@ -67,7 +68,7 @@ comarkserv needs Node.js 20.19 or later.
 | Themes                                                    | 4                          | GitHub light and dark, 580+ base16, base24 and Omarchy themes    |
 | Live Omarchy theme sync                                   | —                          | ✓                                                                |
 | Includes and templates (Markdown, HTML, LESS)             | ✓ (`--templates`)          | —                                                                |
-| `readme` command: open the closest README                 | ✓                          | —                                                                |
+| Open the closest README                                   | ✓ (`readme`)               | ✓ (`comarkserv readme`)                                          |
 | Static site build                                         | —                          | ✓                                                                |
 | Library API                                               | —                          | ✓                                                                |
 
@@ -133,6 +134,15 @@ The build writes one HTML page for each markdown file, a listing page for each d
 - You can open the pages from `file://`, but the search needs a server.
 - The build deletes an earlier build in the output directory. It does not write to a directory that has other files.
 
+### Open the closest README
+
+```bash
+comarkserv readme            # from the current directory
+comarkserv readme ./src      # from another directory
+```
+
+`comarkserv readme` looks for a README in the directory, then in each parent directory, and serves the first one that it finds. It opens the browser. Use `--no-open` to stop that. It accepts the same options as `comarkserv`.
+
 ### List the themes
 
 ```bash
@@ -148,6 +158,24 @@ comarkserv themes gruvbox    # the themes with "gruvbox" in the id or the name
 | <kbd>↑</kbd> <kbd>↓</kbd>, <kbd>↵</kbd>                                 | Move in the results and open one                                                             |
 | <kbd>⌘</kbd> <kbd>↵</kbd>                                               | Open the result in a new tab                                                                 |
 | The palette button in the top bar                                       | Choose a theme: <kbd>↑</kbd> <kbd>↓</kbd> preview, <kbd>↵</kbd> keep, <kbd>esc</kbd> restore |
+
+### Raycast
+
+Two [Raycast script commands](https://github.com/raycast/script-commands) are in [extras/raycast](./extras/raycast):
+
+- **Preview Markdown** opens the file or folder that you select in Finder, or a path that you type. Each folder gets its own server, and a second preview of the same folder uses the server that runs.
+- **Stop Markdown Previews** stops these servers.
+
+To install them, put the two scripts in a folder, and add the folder in Raycast: **Settings → Extensions → Script Commands → Add Directories**.
+
+```bash
+mkdir -p ~/.config/raycast/comarkserv && cd ~/.config/raycast/comarkserv
+curl -fsSLO https://raw.githubusercontent.com/Rigo-m/comarkserv/main/extras/raycast/comarkserv-preview.sh \
+     -fsSLO https://raw.githubusercontent.com/Rigo-m/comarkserv/main/extras/raycast/comarkserv-stop.sh
+chmod +x *.sh
+```
+
+The scripts use `comarkserv` when it is installed, and else `npx comarkserv`. To give more options, such as a theme, edit the `COMARKSERV_ARGS` line at the top of `comarkserv-preview.sh`, for example `COMARKSERV_ARGS="--theme omarchy"`.
 
 ## Writing markdown
 
