@@ -57,14 +57,9 @@ const LOGO_PATHS =
 export const icons = {
   logo: icon(LOGO_PATHS),
   search: icon('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
-  sun: icon(
-    '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
-  ),
-  moon: icon('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/>'),
   palette: icon(
     '<path d="M12 22a10 10 0 1 1 10-10c0 2.8-2.2 4-4.5 4H16a2 2 0 0 0-1.5 3.3c.4.5.6 1 .6 1.5 0 .7-.6 1.2-1.3 1.2Z"/><circle cx="7.5" cy="10.5" r="1.2"/><circle cx="12" cy="7" r="1.2"/><circle cx="16.5" cy="10.5" r="1.2"/>',
   ),
-  monitor: icon('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8m-4-4v4"/>'),
   code: icon('<path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/>'),
   folder: icon(
     '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
@@ -140,7 +135,7 @@ ${input.features?.math ? `<link rel="stylesheet" href="${escape(assets.katex)}">
 <nav class="cms-crumbs" aria-label="Breadcrumb">${renderCrumbs(input.crumbs)}</nav>
 <div class="cms-actions">
 <button class="cms-button cms-search" type="button" data-cms-search>${icons.search}<span>Search</span><kbd>⌘K</kbd></button>
-${input.rawHref ? `<a class="cms-button" href="${escape(input.rawHref)}" title="View the source">${icons.code}</a>\n` : ""}<button class="cms-button cms-theme" type="button" data-cms-theme title="Change the theme"><span class="cms-theme-system">${icons.monitor}</span><span class="cms-theme-light">${icons.sun}</span><span class="cms-theme-dark">${icons.moon}</span><span class="cms-theme-palette">${icons.palette}</span></button>
+${input.rawHref ? `<a class="cms-button" href="${escape(input.rawHref)}" title="View the source">${icons.code}</a>\n` : ""}<button class="cms-button" type="button" data-cms-theme title="Change the theme">${icons.palette}</button>
 ${config.events ? '<span class="cms-live" title="Live reload is connecting"></span>\n' : ""}</div>
 </header>
 <div class="cms-layout">

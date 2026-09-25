@@ -128,11 +128,6 @@ kbd {
 }
 .cms-live[data-state="open"] { background: var(--cms-tip); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cms-tip) 25%, transparent); }
 .cms-live[data-state="closed"] { background: var(--cms-caution); }
-.cms-theme > span { display: none; }
-[data-theme="light"] .cms-theme .cms-theme-light,
-[data-theme="dark"] .cms-theme .cms-theme-dark,
-[data-theme="system"] .cms-theme .cms-theme-system,
-[data-theme="palette"] .cms-theme .cms-theme-palette { display: block; }
 
 /* Layout */
 .cms-layout {

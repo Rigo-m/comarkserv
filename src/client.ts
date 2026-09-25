@@ -57,8 +57,6 @@ export function themeBoot(defaultTheme: Palette | null): void {
     try {
       const raw = localStorage.getItem("cms-theme");
       if (!raw) return null;
-      // Earlier versions stored the mode as a plain string.
-      if (raw === "system" || raw === "light" || raw === "dark") return { mode: raw };
       return JSON.parse(raw) as ThemeChoice;
     } catch {
       return null;
