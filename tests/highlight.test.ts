@@ -71,7 +71,8 @@ describe("code blocks", () => {
 describe("inline code", () => {
   test("highlights inline code with a {:lang} suffix", async () => {
     const html = await render("Use `const a = 1{:ts}` here.");
-    expect(html).toContain('class="twinkleplop-inline language-ts"');
+    // The theme colors apply inside `.twinkleplop`, so inline code needs that class too.
+    expect(html).toContain('class="twinkleplop twinkleplop-inline language-ts"');
     expect(html).toContain('<span class="tok keyword">const</span>');
   });
 

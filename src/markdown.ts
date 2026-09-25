@@ -39,7 +39,15 @@ export interface RenderedMarkdown {
   features: MarkdownFeatures;
 }
 
-export type MarkdownRenderer = (source: string) => Promise<RenderedMarkdown>;
+export interface RenderOptions {
+  /** Changes the `href` of each link for this call. It replaces the `transformLink` of the renderer. */
+  transformLink?: (href: string) => string;
+}
+
+export type MarkdownRenderer = (
+  source: string,
+  options?: RenderOptions,
+) => Promise<RenderedMarkdown>;
 
 interface Scan {
   features: MarkdownFeatures;
@@ -87,9 +95,10 @@ export function createMarkdownRenderer(options: MarkdownRendererOptions = {}): M
     ...options.components,
   };
 
-  return async (source) => {
+  return async (source, renderOptions = {}) => {
     const doc = await parse(source);
-    const { features, firstHeading } = scan(doc.nodes, options.transformLink);
+    const transformLink = renderOptions.transformLink ?? options.transformLink;
+    const { features, firstHeading } = scan(doc.nodes, transformLink);
     await Promise.all([highlighter.preload(doc.nodes), preloadFeatures(features)]);
     const html = await renderHtmlFromDocument(doc, { components });
     const frontmatter: Record<string, unknown> = doc.frontmatter ?? {};

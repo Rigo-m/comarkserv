@@ -127,7 +127,11 @@ export function createCodeHighlighter(options: CodeHighlighterOptions = {}): Cod
       const id = resolveLanguage(INLINE_LANGUAGE.exec(text)?.[1]);
       if (id) await loadLanguage(id);
       try {
-        return renderer.inline_code(text) ?? `<code>${escapeHtml(text)}</code>`;
+        const html = renderer.inline_code(text);
+        // The theme colors apply inside `.twinkleplop`, so inline code needs that class too.
+        return html
+          ? html.replace('class="twinkleplop-inline', 'class="twinkleplop twinkleplop-inline')
+          : `<code>${escapeHtml(text)}</code>`;
       } catch {
         return `<code>${escapeHtml(text)}</code>`;
       }
