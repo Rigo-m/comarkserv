@@ -30,7 +30,8 @@ jobs:
       - run: vp install
       - run: vp check
       - run: vp test
-      - run: vp pack
+      # The build tools need Node.js 22 or later. The package itself runs on Node.js 20.19.
+      - run: vp env exec --node 24 vp pack
       - name: Smoke test the CLI
         run: |
           node dist/cli.mjs --version

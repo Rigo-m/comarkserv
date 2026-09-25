@@ -1,0 +1,2 @@
+# Check out the files with LF line endings on every system, so the formatter gives the same result.
+* text=auto eol=lf
