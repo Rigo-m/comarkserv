@@ -171,6 +171,8 @@ export async function build(options: BuildOptions = {}): Promise<BuildResult> {
         events: "",
         themes: catalog ? `${base}themes/catalog.json` : "",
         edit: "",
+        share: "",
+        local: "",
         source: `/${url}`,
         kind,
       },

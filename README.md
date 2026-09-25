@@ -22,13 +22,13 @@ npx comarkserv ./docs
 ## Why comarkserv
 
 - **Fast.** The server is ready in about 130 ms. A repeated page takes less than 1 ms, and the throughput is about 9× that of markserv. See the [benchmarks](#benchmarks).
-- **Small.** 22 MB and 28 packages installed, 12× less than markserv.
+- **Small.** 23 MB and 29 packages installed, 12× less than markserv.
 - **Live.** When you save, the page replaces only the blocks that changed and flashes them. The scroll position stays.
 - **Modern markdown.** GFM, GitHub alerts, Comark components, code with titles and line highlights, math and Mermaid diagrams. The server renders math and diagrams, so the browser loads no JavaScript for them.
 - **Search.** <kbd>⌘</kbd> <kbd>K</kbd> finds pages and headings in the whole folder.
 - **580+ themes.** All base16, base24 and Omarchy themes, loaded when you choose one. comarkserv can also follow your Omarchy theme live.
 - **Edit in place.** The Edit button, or <kbd>E</kbd>, opens the file in your editor at the section on the screen.
-- **Share.** `--share` gives your colleagues a public URL and a QR code, through a Cloudflare tunnel.
+- **Share.** The Share button, or `--share`, gives your colleagues a public URL and a QR code, through a Cloudflare tunnel.
 - **Terminal.** `comarkserv cat` shows a markdown file in the terminal, with colored code and diagrams.
 - **Static sites.** `comarkserv build` makes a site that works on any static host.
 - **A library too.** A web-standard `fetch` handler for srvx, Bun, Deno or any server.
@@ -75,7 +75,7 @@ comarkserv needs Node.js 20.19 or later.
 | Includes and templates (Markdown, HTML, LESS)             | ✓ (`--templates`)          | —                                                                |
 | Open the closest README                                   | ✓ (`readme`)               | ✓ (`comarkserv readme`)                                          |
 | Open the file in your editor, at the current section      | —                          | ✓                                                                |
-| Share with a public URL and a QR code                     | —                          | ✓ (`--share`)                                                    |
+| Share with a public URL and a QR code                     | —                          | ✓ (Share button, `--share`)                                      |
 | Show markdown in the terminal                             | —                          | ✓ (`comarkserv cat`)                                             |
 | Static site build                                         | —                          | ✓                                                                |
 | Library API                                               | —                          | ✓                                                                |
@@ -86,15 +86,15 @@ comarkserv needs Node.js 20.19 or later.
 
 |                                 |   comarkserv 0.1.0 |      markserv 1.20.0 | comarkserv  |
 | ------------------------------- | -----------------: | -------------------: | ----------- |
-| Install size                    | 22 MB, 28 packages | 276 MB, 277 packages | 12.4× less  |
-| Startup, to the first response  |             131 ms |               235 ms | 1.8× faster |
-| Memory at idle (RSS)            |              91 MB |               112 MB | 1.2× less   |
-| First render of a page          |              24 ms |                31 ms | 1.3× faster |
-| Page, repeated request (median) |             0.3 ms |               1.6 ms | 5.4× faster |
-| Page after an edit (median)     |             1.4 ms |               1.7 ms | 1.2× faster |
-| Large page, 301 KB (median)     |             4.0 ms |                35 ms | 8.7× faster |
-| Throughput, 16 connections      |        10050 req/s |           1136 req/s | 8.8× faster |
-| Peak memory under load (RSS)    |             310 MB |               353 MB | 1.1× less   |
+| Install size                    | 23 MB, 29 packages | 277 MB, 277 packages | 12.1× less  |
+| Startup, to the first response  |             132 ms |               239 ms | 1.8× faster |
+| Memory at idle (RSS)            |              90 MB |               112 MB | 1.2× less   |
+| First render of a page          |              22 ms |                33 ms | 1.5× faster |
+| Page, repeated request (median) |             0.3 ms |               1.7 ms | 6.3× faster |
+| Page after an edit (median)     |             1.6 ms |               1.3 ms | 1.3× slower |
+| Large page, 301 KB (median)     |             4.2 ms |                39 ms | 9.1× faster |
+| Throughput, 16 connections      |        10981 req/s |           1152 req/s | 9.5× faster |
+| Peak memory under load (RSS)    |             327 MB |               371 MB | 1.1× less   |
 
 _macOS 26.2 (arm64), Apple M4 Pro, 24 GB, Node.js 24.21.0, 2026-09-25. Run `vp run bench` to measure on your machine._
 <!-- bench:end -->
@@ -154,15 +154,18 @@ comarkserv readme ./src      # from another directory
 
 ### Share with colleagues
 
+Click the Share button in the top bar, or start comarkserv with `--share`:
+
 ```bash
 comarkserv ./docs --share
 ```
 
-`--share` starts a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) with [untun](https://github.com/unjs/untun), and prints a public URL and a QR code.
+Both start a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) with [untun](https://github.com/unjs/untun), and show a public URL and a QR code.
 
-- Anyone with the URL can read the files in the folder, until you stop comarkserv. Dotfiles stay hidden.
-- The Edit button is off, so nobody can open files in your editor.
-- The first `--share` installs `cloudflared`. untun asks you to accept the Cloudflare license first, so run it one time in a terminal. With no terminal, comarkserv stops, unless you set `UNTUN_ACCEPT_CLOUDFLARE_NOTICE=1` to accept the license.
+- Anyone with the URL can read the files in the folder, until you stop sharing or stop comarkserv. Dotfiles stay hidden.
+- The dialog of the Share button shows the link to the page that you read, a QR code of it, and **Stop sharing**. The button turns green while the folder is shared.
+- Visitors do not see the Edit and Share buttons, and the server refuses both actions for them. You keep both.
+- The first share installs `cloudflared`, and you must accept the Cloudflare license first. The Share button shows the links and asks you. `--share` asks in the terminal. With no terminal, comarkserv stops, unless you set `UNTUN_ACCEPT_CLOUDFLARE_NOTICE=1` to accept the license.
 
 For a colleague on the same network, `--host 0.0.0.0` is enough. comarkserv then prints the network URL and a QR code for your phone.
 
@@ -330,6 +333,8 @@ serve({ fetch: app.fetch });
 - `themeStore`: replaces the store that downloads and caches the themes, for example to use no network
 - `omarchyPath`: the `colors.toml` of the current Omarchy theme
 - `editor`: show the Edit button (default `true`). Turn it off when other machines can reach the server.
+- `share`: show the Share button (default `true`). Turn it off when other machines can reach the server.
+- `shareService`: replaces the service that starts and stops the tunnel
 - `openEditor`: replaces the function that opens a file in the editor
 
 ## How it stays fast
@@ -350,7 +355,15 @@ Each response has a `Server-Timing` header with the render time.
 
 comarkserv is a tool for your own files. It binds to `localhost` by default, and it does not serve dotfiles or files outside the root. Markdown can contain raw HTML and scripts, as on markserv. Do not serve markdown that you do not trust on a network.
 
-The Edit button opens files in your editor, so its endpoint accepts only a POST from the page itself: the host name must be local (against DNS rebinding), the origin must match, and a custom header must be present (so another site needs a preflight, which the server does not answer). The path must be a visible file in the root. The CLI turns the button off for `--share` and for a host that is not local.
+The Edit and Share buttons act on your machine, so their endpoints accept only a POST from a comarkserv page on this machine:
+
+- The host name must be local, against DNS rebinding.
+- The origin must match, and a custom header must be present. So another site needs a preflight, and the server answers no preflight.
+- The request must not come through a tunnel or a proxy. cloudflared connects from `127.0.0.1`, so the server also refuses each request with `Cf-Ray`, `Cf-Connecting-Ip`, `X-Forwarded-For`, `Forwarded` or `X-Real-Ip`. Cloudflare adds these headers, and a visitor cannot remove them.
+- The page shows the buttons only after the server confirms that the viewer is local.
+- The Edit endpoint opens only a visible file in the root.
+
+The CLI turns both buttons off for a host that is not local, such as `--host 0.0.0.0`.
 
 Theme files come from the network, and their colors go into CSS. So comarkserv accepts only hex colors from a theme, in the server and in the browser. The theme endpoint of the server downloads files only from the two theme repositories, so it is not an open proxy.
 

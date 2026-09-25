@@ -12,6 +12,8 @@ import { injectClient, renderListing, renderPage, renderReadme, renderStatus } f
 import type { PageAssets, PageInput } from "./page.ts";
 import type { OpenEditor } from "./editor.ts";
 import { createSearchIndex, extractOutline } from "./search.ts";
+import { CLOUDFLARE_LINKS, createShareService, ShareConsentError } from "./share.ts";
+import type { ShareService } from "./share.ts";
 import {
   crumbsFor,
   hasHiddenSegment,
@@ -53,6 +55,10 @@ export interface ComarkservOptions extends MarkdownRendererOptions {
   editor?: boolean;
   /** Replaces the function that opens a file in the editor. */
   openEditor?: OpenEditor;
+  /** Show a Share button that shares the pages at a public URL, through a Cloudflare tunnel. @default true */
+  share?: boolean;
+  /** Replaces the service that starts and stops the tunnel. */
+  shareService?: ShareService;
 }
 
 export interface ComarkservHandler {
@@ -62,7 +68,9 @@ export interface ComarkservHandler {
   fetch: (request: Request) => Promise<Response>;
   /** Loads the markdown renderer before the first request needs it. */
   warmup: () => Promise<void>;
-  /** Stops the file watcher and closes the live reload streams. */
+  /** The tunnel for sharing, or `undefined` when sharing is off. */
+  readonly share: ShareService | undefined;
+  /** Stops the file watcher, the tunnel and the live reload streams. */
   close: () => Promise<void>;
 }
 
@@ -84,6 +92,36 @@ interface Timed {
 
 const HTML = "text/html; charset=utf-8";
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+// A request through a tunnel or a proxy comes from 127.0.0.1 too. Cloudflare adds
+// Cf-Ray and Cf-Connecting-Ip, which a visitor cannot remove, and proxies add the others.
+const PROXY_HEADERS = ["cf-ray", "cf-connecting-ip", "x-forwarded-for", "forwarded", "x-real-ip"];
+
+/** Returns true for a request from a browser on this machine, not through a tunnel or a proxy. */
+function isLocalRequest(request: Request): boolean {
+  return (
+    LOOPBACK_HOSTS.has(new URL(request.url).hostname) &&
+    PROXY_HEADERS.every((header) => !request.headers.has(header))
+  );
+}
+
+/**
+ * Returns true for an action from a comarkserv page on this machine: a local request,
+ * from the same origin, with the custom header. A cross-origin request with that
+ * header needs a preflight, and the server answers no preflight.
+ */
+function isLocalAction(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  return (
+    isLocalRequest(request) &&
+    (origin === null || origin === new URL(request.url).origin) &&
+    request.headers.get("x-comarkserv-action") === "1"
+  );
+}
+
+async function qrCode(text: string): Promise<string> {
+  const { renderSVG } = await import("uqr");
+  return renderSVG(text, { pixelSize: 4, whiteColor: "#ffffff", blackColor: "#1f2328" });
+}
 const MIN_COMPRESS_SIZE = 1024;
 const IMMUTABLE = "public, max-age=31536000, immutable";
 
@@ -198,6 +236,8 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
   const rootName = basename(root) || root;
   const livereload = options.livereload ?? true;
   const editor = options.editor ?? true;
+  const shareService =
+    options.share === false ? undefined : (options.shareService ?? createShareService());
   // launch-editor loads on the first request that needs it.
   const openEditor: OpenEditor =
     options.openEditor ??
@@ -240,6 +280,8 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
     events: livereload ? `${INTERNAL_PREFIX}events` : "",
     themes: `${INTERNAL_PREFIX}themes/catalog.json`,
     edit: editor ? `${INTERNAL_PREFIX}edit` : "",
+    share: shareService ? `${INTERNAL_PREFIX}share` : "",
+    local: `${INTERNAL_PREFIX}local`,
     source,
     kind,
     ...(lines ? { lines } : {}),
@@ -433,11 +475,15 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
         const unsubscribeTheme = themes.subscribe((theme) => {
           send(`event: theme\ndata: ${JSON.stringify({ theme })}\n\n`);
         });
+        const unsubscribeShare = shareService?.subscribe((status) => {
+          send(`event: share\ndata: ${JSON.stringify(status)}\n\n`);
+        });
         const ping = setInterval(() => send(": ping\n\n"), 25_000);
         close = () => {
           clearInterval(ping);
           unsubscribe();
           unsubscribeTheme();
+          unsubscribeShare?.();
           streams.delete(close);
           try {
             controller.close();
@@ -471,15 +517,7 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
     if (request.method !== "POST") {
       return new Response("Method not allowed", { status: 405, headers: { allow: "POST" } });
     }
-    const url = new URL(request.url);
-    const origin = request.headers.get("origin");
-    if (
-      !LOOPBACK_HOSTS.has(url.hostname) ||
-      (origin !== null && origin !== url.origin) ||
-      request.headers.get("x-comarkserv-edit") !== "1"
-    ) {
-      return new Response("Forbidden", { status: 403 });
-    }
+    if (!isLocalAction(request)) return new Response("Forbidden", { status: 403 });
     const body = (await request.json().catch(() => ({}))) as { path?: unknown; line?: unknown };
     const pathname = typeof body.path === "string" ? body.path : "";
     const visible =
@@ -503,7 +541,56 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
     return new Response(null, { status: 204 });
   };
 
+  // Tells a page on this machine which actions it can show. A page through the
+  // tunnel gets 403, so its Edit and Share buttons stay hidden.
+  const localCheck = (request: Request): Response => {
+    if (!isLocalRequest(request)) return new Response("Forbidden", { status: 403 });
+    return Response.json(
+      { edit: editor, share: shareService ? shareService.status() : null },
+      { headers: { "cache-control": "no-store" } },
+    );
+  };
+
+  const shareState = async (path: unknown, status = 200): Promise<Response> => {
+    const current = shareService?.status();
+    let extra = {};
+    if (current?.url) {
+      const safe = typeof path === "string" && path.startsWith("/") && !path.startsWith("//");
+      const page = safe ? new URL(path, current.url).href : current.url;
+      extra = { page, qr: await qrCode(page) };
+    }
+    return Response.json({ ...current, links: CLOUDFLARE_LINKS, ...extra }, { status });
+  };
+
+  // Starts, stops or reads the tunnel. The same protection as the edit endpoint applies.
+  const shareAction = async (request: Request): Promise<Response> => {
+    if (!shareService) return new Response("Not found", { status: 404 });
+    if (request.method !== "POST") {
+      return new Response("Method not allowed", { status: 405, headers: { allow: "POST" } });
+    }
+    if (!isLocalAction(request)) return new Response("Forbidden", { status: 403 });
+    const body = (await request.json().catch(() => ({}))) as {
+      action?: unknown;
+      accept?: unknown;
+      path?: unknown;
+    };
+    if (body.action === "stop") {
+      await shareService.stop();
+    } else if (body.action === "start") {
+      try {
+        await shareService.start({
+          origin: new URL(request.url).origin,
+          accept: body.accept === true,
+        });
+      } catch (error) {
+        return shareState(body.path, error instanceof ShareConsentError ? 409 : 500);
+      }
+    }
+    return shareState(body.path);
+  };
+
   const internal = async (request: Request, name: string): Promise<Response> => {
+    if (name === "local") return localCheck(request);
     if (name === "app.css" || name === "app.js") {
       return respond(request, assetBodies[name], { headers: { "cache-control": IMMUTABLE } });
     }
@@ -524,7 +611,9 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
   };
 
   const handle = async (request: Request): Promise<Response> => {
-    if (new URL(request.url).pathname === `${INTERNAL_PREFIX}edit`) return edit(request);
+    const requested = new URL(request.url).pathname;
+    if (requested === `${INTERNAL_PREFIX}edit`) return edit(request);
+    if (requested === `${INTERNAL_PREFIX}share`) return shareAction(request);
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("Method not allowed", { status: 405, headers: { allow: "GET, HEAD" } });
     }
@@ -566,6 +655,7 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
 
   return {
     root,
+    share: shareService,
     warmup: async () => {
       await Promise.all([getRenderer(), themes.current()]);
     },
@@ -578,7 +668,7 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
       }
     },
     close: async () => {
-      await Promise.all([watcher?.close(), themes.close()]);
+      await Promise.all([watcher?.close(), themes.close(), shareService?.stop()]);
       for (const close of streams) close();
     },
   };

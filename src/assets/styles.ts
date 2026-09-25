@@ -119,6 +119,9 @@ kbd {
 }
 .cms-search kbd { margin-left: auto; }
 .cms-edit[data-state="ok"] { color: var(--cms-tip); }
+.cms-share-button[data-state="on"] { color: var(--cms-tip); }
+.cms-share-button[data-state="starting"] { animation: cms-pulse 1s ease-in-out infinite alternate; }
+@keyframes cms-pulse { to { opacity: 0.35; } }
 .cms-edit[data-state="error"] { color: var(--cms-caution); }
 .cms-live {
   width: 8px;
@@ -422,6 +425,42 @@ kbd {
 .cms-palette mark { color: var(--cms-accent); background: none; font-weight: 700; }
 .cms-palette .cms-hint { display: flex; gap: 16px; padding: 8px 16px; font-size: 12px; color: var(--cms-muted); border-top: 1px solid var(--cms-border); }
 .cms-palette .cms-none { padding: 24px; color: var(--cms-muted); text-align: center; }
+
+/* Share dialog */
+.cms-share {
+  width: min(460px, calc(100vw - 32px));
+  margin: 12vh auto auto;
+  padding: 20px 22px;
+  color: var(--cms-fg);
+  background: var(--cms-bg);
+  border: 1px solid var(--cms-border);
+  border-radius: 12px;
+  box-shadow: var(--cms-shadow);
+  font-size: 14px;
+}
+.cms-share::backdrop { background: rgb(1 4 9 / 0.4); backdrop-filter: blur(2px); }
+.cms-share h2 { margin: 0 0 8px; font-size: 17px; }
+.cms-share p { margin: 0 0 12px; color: var(--cms-muted); line-height: 1.5; }
+.cms-share .cms-share-error { color: var(--cms-caution); }
+.cms-share .cms-share-wait { animation: cms-pulse 1.2s ease-in-out infinite alternate; }
+.cms-share-link { display: flex; gap: 8px; margin: 0 0 14px; }
+.cms-share-link input {
+  flex: 1;
+  min-width: 0;
+  padding: 0 10px;
+  font: 13px var(--cms-mono);
+  color: inherit;
+  background: var(--cms-subtle);
+  border: 1px solid var(--cms-border);
+  border-radius: 6px;
+}
+.cms-qr { display: flex; justify-content: center; margin: 0 0 16px; }
+.cms-qr svg { width: 180px; height: 180px; padding: 8px; background: #fff; border-radius: 8px; }
+.cms-share-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.cms-share .cms-button { border-color: var(--cms-border); }
+.cms-share .cms-primary { color: #fff; background: var(--cms-accent); border-color: var(--cms-accent); }
+.cms-share .cms-primary:hover { color: #fff; background: color-mix(in srgb, var(--cms-accent) 85%, #000); }
+.cms-share .cms-danger { color: var(--cms-caution); }
 
 /* Live reload */
 @keyframes cms-flash {

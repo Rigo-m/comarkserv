@@ -15,6 +15,13 @@ export interface ClientConfig {
   edit: string;
   /** The source line of each heading, by heading id, so the editor opens at the section on the screen. */
   lines?: Record<string, number>;
+  /** The URL of the share endpoint, or an empty string when sharing is off. */
+  share: string;
+  /**
+   * The URL of the local check, or an empty string. The page shows the Edit and Share
+   * buttons only when the server answers that the viewer is on this machine.
+   */
+  local: string;
   /** The URL path of the source of this page, from the site root. Live reload compares changes with it. */
   source: string;
   /** The type of page. */
@@ -213,6 +220,7 @@ export function client(parse: typeof parseTheme): void {
       return;
     }
     if (target?.closest("[data-cms-edit]")) void openEditor();
+    else if (target?.closest("[data-cms-share]")) openShare();
     else if (target?.closest("[data-cms-theme]")) openPalette("theme");
     else if (target?.closest("[data-cms-search]")) openPalette("search");
   });
@@ -243,10 +251,10 @@ export function client(parse: typeof parseTheme): void {
     return line;
   };
   const openEditor = async () => {
-    if (!config.edit || config.kind !== "markdown") return;
+    if (!config.edit || config.kind !== "markdown" || !editButton || editButton.hidden) return;
     const response = await fetch(config.edit, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-comarkserv-edit": "1" },
+      headers: { "content-type": "application/json", "x-comarkserv-action": "1" },
       body: JSON.stringify({ path: config.source, line: currentLine() }),
     }).catch(() => undefined);
     if (!editButton) return;
@@ -259,6 +267,121 @@ export function client(parse: typeof parseTheme): void {
       : (error ?? "The editor did not open");
     setTimeout(() => delete editButton.dataset.state, 1500);
   };
+
+  // Share: a public URL through a Cloudflare tunnel, for the viewer on this machine.
+  interface ShareState {
+    state: "off" | "starting" | "on";
+    url?: string;
+    page?: string;
+    qr?: string;
+    needsConsent: boolean;
+    error?: string;
+    links?: { license: string; terms: string; privacy: string };
+  }
+  const shareButton = doc.querySelector<HTMLButtonElement>("[data-cms-share]");
+  let share: ShareState = { state: "off", needsConsent: false };
+  let shareDialog: HTMLDialogElement | undefined;
+
+  const renderShare = () => {
+    if (!shareDialog) return;
+    const links = share.links;
+    const link = (href: string | undefined, text: string) =>
+      href ? `<a href="${escape(href)}" target="_blank" rel="noreferrer">${text}</a>` : text;
+    if (share.state === "on") {
+      shareDialog.innerHTML =
+        "<h2>Sharing</h2><p>Anyone with this link can read the files in this folder. They cannot use the Edit button.</p>" +
+        `<div class="cms-share-link"><input readonly value="${escape(share.page ?? share.url ?? "")}" aria-label="The public link"><button class="cms-button cms-primary" type="button" data-share-copy>Copy</button></div>` +
+        `<div class="cms-qr">${share.qr ?? ""}</div>` +
+        '<div class="cms-share-actions"><button class="cms-button cms-danger" type="button" data-share-stop>Stop sharing</button><button class="cms-button" type="button" data-share-close>Close</button></div>';
+    } else if (share.state === "starting") {
+      shareDialog.innerHTML =
+        '<h2>Sharing</h2><p class="cms-share-wait">Starting a Cloudflare tunnel. This can take some seconds. The first time, comarkserv also downloads cloudflared.</p>' +
+        '<div class="cms-share-actions"><button class="cms-button" type="button" data-share-close>Close</button></div>';
+    } else {
+      shareDialog.innerHTML =
+        "<h2>Share this folder</h2><p>comarkserv gives the pages a public URL, through a free Cloudflare tunnel. Anyone with the URL can read the files in this folder, until you stop sharing or stop comarkserv. Visitors cannot use the Edit button.</p>" +
+        (share.needsConsent
+          ? `<p class="cms-share-consent">To share, comarkserv installs cloudflared first. Before that, you must accept the Cloudflare ${link(links?.license, "License")}, ${link(links?.terms, "Terms")} and ${link(links?.privacy, "Privacy Policy")}.</p>`
+          : "") +
+        (share.error ? `<p class="cms-share-error">${escape(share.error)}</p>` : "") +
+        `<div class="cms-share-actions"><button class="cms-button cms-primary" type="button" data-share-start>${share.needsConsent ? "Accept and share" : "Share"}</button><button class="cms-button" type="button" data-share-close>Cancel</button></div>`;
+    }
+  };
+
+  const setShare = (next: ShareState) => {
+    share = { ...share, ...next };
+    if (next.state !== "on") {
+      delete share.page;
+      delete share.qr;
+    }
+    if (shareButton) {
+      shareButton.dataset.state = share.state;
+      shareButton.title =
+        share.state === "on" ? `Sharing at ${share.url ?? ""}` : "Share this folder";
+    }
+    if (shareDialog?.open) renderShare();
+  };
+
+  const shareRequest = async (action: "status" | "start" | "stop") => {
+    const response = await fetch(config.share, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-comarkserv-action": "1" },
+      body: JSON.stringify({
+        action,
+        accept: action === "start" && share.needsConsent,
+        path: location.pathname + location.search,
+      }),
+    }).catch(() => undefined);
+    const next = (await response?.json().catch(() => undefined)) as ShareState | undefined;
+    setShare(next ?? { ...share, state: "off", error: "The server does not answer." });
+  };
+
+  const openShare = () => {
+    if (!config.share || !shareButton || shareButton.hidden) return;
+    if (!shareDialog) {
+      shareDialog = doc.createElement("dialog");
+      shareDialog.className = "cms-share";
+      doc.body.append(shareDialog);
+      shareDialog.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (event.target === shareDialog || target?.closest("[data-share-close]")) {
+          shareDialog?.close();
+        } else if (target?.closest("[data-share-start]")) {
+          setShare({ ...share, state: "starting" });
+          void shareRequest("start");
+        } else if (target?.closest("[data-share-stop]")) {
+          void shareRequest("stop");
+        } else if (target?.closest("[data-share-copy]")) {
+          const copy = target.closest("button");
+          void copyText(share.page ?? share.url ?? "").then(() => {
+            if (copy) copy.textContent = "Copied";
+          });
+        }
+      });
+    }
+    renderShare();
+    shareDialog.showModal();
+    void shareRequest("status");
+  };
+
+  // Only a viewer on this machine gets Edit and Share. A viewer through the tunnel gets 403.
+  if (config.local) {
+    void fetch(config.local, { cache: "no-store" })
+      .then((response) =>
+        response.ok
+          ? (response.json() as Promise<{ edit: boolean; share: ShareState | null }>)
+          : undefined,
+      )
+      .then((local) => {
+        if (!local) return;
+        if (local.edit && editButton) editButton.hidden = false;
+        if (local.share && shareButton) {
+          shareButton.hidden = false;
+          setShare(local.share);
+        }
+      })
+      .catch(() => {});
+  }
 
   // Fuzzy matching for the palette.
   const isBoundary = (char: string | undefined) => !char || /[\s/._\-›:]/.test(char);
@@ -786,6 +909,10 @@ export function client(parse: typeof parseTheme): void {
     events.addEventListener("change", (event) =>
       onChange((JSON.parse(event.data) as { paths: string[] }).paths),
     );
+    // The share state changed, maybe from the command line: read the full state again.
+    events.addEventListener("share", () => {
+      if (shareButton && !shareButton.hidden) void shareRequest("status");
+    });
     events.addEventListener("theme", (event) =>
       onTheme((JSON.parse(event.data) as { theme: Palette }).theme),
     );

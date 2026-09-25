@@ -36,7 +36,7 @@ const edit = (body: unknown, headers: Record<string, string> = {}, host = "local
   app.fetch(
     new Request(`http://${host}/__comarkserv/edit`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-comarkserv-edit": "1", ...headers },
+      headers: { "content-type": "application/json", "x-comarkserv-action": "1", ...headers },
       body: JSON.stringify(body),
     }),
   );
@@ -128,7 +128,7 @@ describe("the page", () => {
       const response = await off.fetch(
         new Request("http://localhost/__comarkserv/edit", {
           method: "POST",
-          headers: { "x-comarkserv-edit": "1" },
+          headers: { "x-comarkserv-action": "1" },
           body: JSON.stringify({ path: "/guide.md" }),
         }),
       );

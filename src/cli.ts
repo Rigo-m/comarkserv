@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
-import { networkInterfaces, tmpdir } from "node:os";
+import { networkInterfaces } from "node:os";
+import { createInterface } from "node:readline/promises";
 import { styleText } from "node:util";
 import { defineCommand, runMain } from "citty";
-import { basename, dirname, join, relative, resolve } from "pathe";
+import { basename, dirname, relative, resolve } from "pathe";
 import { DEFAULT_PORT, startServer } from "./server.ts";
+import type { ComarkservServer } from "./server.ts";
+import { CLOUDFLARE_LINKS, isCloudflaredInstalled } from "./share.ts";
 import { findReadme } from "./site.ts";
 import { createThemeStore, OMARCHY_CURRENT } from "./themes.ts";
 
@@ -109,30 +112,46 @@ async function qrCode(url: string): Promise<string> {
 }
 
 /**
- * untun asks for consent before it installs cloudflared. With no terminal, its
- * prompt answers yes, so comarkserv asks for an explicit yes in that case.
+ * Gets the consent for the Cloudflare license before cloudflared is installed, and
+ * returns it for the tunnel. untun answers its own prompt with yes when there is no
+ * terminal, so comarkserv asks the question itself, or stops.
  */
-function checkTunnelConsent(): void {
-  const untunDirectory = join(tmpdir(), "node-untun");
-  const installed =
-    existsSync(untunDirectory) &&
-    readdirSync(untunDirectory).some((name) => name.startsWith("cloudflared"));
-  if (installed || process.stdin.isTTY || process.env.UNTUN_ACCEPT_CLOUDFLARE_NOTICE) return;
-  fail(
-    "The first --share installs cloudflared, and you must accept the Cloudflare license first. " +
-      "Run the command in a terminal, where untun asks you. Or set UNTUN_ACCEPT_CLOUDFLARE_NOTICE=1 to accept the license.",
+async function tunnelConsent(): Promise<boolean> {
+  if (isCloudflaredInstalled()) return false;
+  if (process.env.UNTUN_ACCEPT_CLOUDFLARE_NOTICE) return true;
+  if (!process.stdin.isTTY) {
+    fail(
+      "The first --share installs cloudflared, and you must accept the Cloudflare license first. " +
+        "Run the command in a terminal, or set UNTUN_ACCEPT_CLOUDFLARE_NOTICE=1 to accept the license.",
+    );
+  }
+  console.log(
+    [
+      "",
+      "  --share installs cloudflared from GitHub. Before that, accept the Cloudflare documents:",
+      `  License  ${CLOUDFLARE_LINKS.license}`,
+      `  Terms    ${CLOUDFLARE_LINKS.terms}`,
+      `  Privacy  ${CLOUDFLARE_LINKS.privacy}`,
+      "",
+    ].join("\n"),
   );
+  const prompt = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await prompt.question("  Do you accept them and install cloudflared? (y/N) ");
+  prompt.close();
+  if (!/^y(es)?$/i.test(answer.trim())) fail("comarkserv did not share the pages.");
+  return true;
 }
 
-/** Starts a Cloudflare quick tunnel to the server and prints its public URL. */
-async function share(port: number, root: string, open: boolean): Promise<void> {
+/** Starts the tunnel of the server and prints its public URL. */
+async function share(server: ComarkservServer, accept: boolean, open: boolean): Promise<void> {
+  const service = server.handler.share;
+  if (!service) fail("Sharing is off for this server.");
   console.log(styleText("dim", "  Starting a public tunnel. This can take some seconds..."));
-  const { startTunnel } = await import("untun");
-  const tunnel = await startTunnel({ url: `http://127.0.0.1:${port}` }).catch((error: unknown) =>
-    fail(`The tunnel did not start: ${error instanceof Error ? error.message : String(error)}`),
-  );
-  if (!tunnel) fail("The tunnel did not start, so the pages are not shared.");
-  const url = await tunnel.getURL();
+  const url = await service
+    .start({ origin: `http://127.0.0.1:${server.port}`, accept })
+    .catch((error: unknown) =>
+      fail(`The tunnel did not start: ${error instanceof Error ? error.message : String(error)}`),
+    );
   console.log(
     [
       "",
@@ -142,7 +161,7 @@ async function share(port: number, root: string, open: boolean): Promise<void> {
       "",
       styleText(
         "yellow",
-        `  Anyone with this URL can read the files in ${display(root)}. The Edit button is off.`,
+        `  Anyone with this URL can read the files in ${display(server.handler.root)}. Visitors cannot edit.`,
       ),
       styleText("dim", "  Press Ctrl+C to stop the server and the tunnel."),
       "",
@@ -154,7 +173,7 @@ async function share(port: number, root: string, open: boolean): Promise<void> {
 /** Serves a directory, or the directory of a markdown file, and prints the banner. */
 async function serve(target: string, args: ServeArgs, open: boolean): Promise<void> {
   if (!existsSync(target)) fail(`There is no file or directory at ${target}.`);
-  if (args.share) checkTunnelConsent();
+  const accept = args.share ? await tunnelConsent() : false;
   const isFile = statSync(target).isFile();
   const port = Number(args.port);
   if (!Number.isInteger(port) || port < 0 || port > 65_535)
@@ -173,8 +192,10 @@ async function serve(target: string, args: ServeArgs, open: boolean): Promise<vo
     theme: args.theme,
     port,
     host,
-    // Other machines must not open files in the editor of this machine.
-    editor: LOCAL_HOSTS.has(host) && !args.share,
+    // Other machines must not open files in the editor, or share this folder. The
+    // server also refuses both for a request through the tunnel.
+    editor: LOCAL_HOSTS.has(host),
+    share: LOCAL_HOSTS.has(host),
     strictPort: args["strict-port"],
     livereload: args.livereload,
     lineNumbers: args["line-numbers"],
@@ -212,7 +233,7 @@ async function serve(target: string, args: ServeArgs, open: boolean): Promise<vo
     const [address] = networkUrls(server.port);
     if (address) console.log(`${await qrCode(address)}\n`);
   }
-  if (args.share) await share(server.port, server.handler.root, open);
+  if (args.share) await share(server, accept, open);
   else if (open) openBrowser(url);
 
   const stop = () => {
