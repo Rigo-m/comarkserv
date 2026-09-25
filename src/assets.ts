@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { paletteStyles, themeTokenNames } from "./assets/palette.ts";
 import { styles } from "./assets/styles.ts";
 import { clientScript } from "./client.ts";
 
@@ -37,9 +38,11 @@ let assets: Assets | undefined;
 export function getAssets(): Assets {
   if (assets) return assets;
   const katexDir = dirname(require.resolve("katex"));
+  const themeCss = readFileSync(require.resolve("@twinkleplop/theme-github"), "utf8");
   assets = {
+    // The palette rules come after the GitHub theme, so an active palette wins.
     "app.css": asset(
-      `${styles}\n${readFileSync(require.resolve("@twinkleplop/theme-github"), "utf8")}`,
+      `${styles}\n${themeCss}\n${paletteStyles(themeTokenNames(themeCss))}`,
       "text/css; charset=utf-8",
     ),
     "app.js": asset(clientScript, "text/javascript; charset=utf-8"),

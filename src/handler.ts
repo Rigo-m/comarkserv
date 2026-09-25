@@ -19,6 +19,9 @@ import {
   readDirectory,
   serverLinks,
 } from "./site.ts";
+import { createThemeService } from "./theme-server.ts";
+import { createThemeStore } from "./themes.ts";
+import type { ThemeStore } from "./themes.ts";
 import { watchTree } from "./watch.ts";
 
 /** The URL prefix of the files and endpoints of comarkserv itself. */
@@ -33,6 +36,15 @@ export interface ComarkservOptions extends MarkdownRendererOptions {
   dotfiles?: boolean;
   /** The maximum number of rendered pages in memory. @default 500 */
   cacheSize?: number;
+  /**
+   * The default theme: `github`, `base16:<id>`, `base24:<id>`, `omarchy:<id>`, `omarchy`
+   * (the current Omarchy theme, live), a scheme file or a URL. @default "github"
+   */
+  theme?: string;
+  /** The store that loads and caches the themes. Replace it to use another cache or no network. */
+  themeStore?: ThemeStore;
+  /** The `colors.toml` of the current Omarchy theme. @default ~/.local/state/omarchy/current/theme/colors.toml */
+  omarchyPath?: string;
 }
 
 export interface ComarkservHandler {
@@ -184,6 +196,13 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
   const search = createSearchIndex({ root, dotfiles });
   const serverId = randomUUID();
   const streams = new Set<() => void>();
+  const themes = createThemeService({
+    spec: options.theme ?? "github",
+    store: options.themeStore ?? createThemeStore({ omarchyPath: options.omarchyPath }),
+    prefix: `${INTERNAL_PREFIX}themes/`,
+    watch: livereload,
+    omarchyPath: options.omarchyPath,
+  });
 
   const assets = getAssets();
   const assetBodies = {
@@ -199,10 +218,12 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
     root: "/",
     search: `${INTERNAL_PREFIX}search.json`,
     events: livereload ? `${INTERNAL_PREFIX}events` : "",
+    themes: `${INTERNAL_PREFIX}themes/catalog.json`,
     source,
     kind,
   });
-  const page = (input: Omit<PageInput, "assets">) => renderPage({ ...input, assets: pageAssets });
+  const page = async (input: Omit<PageInput, "assets" | "theme">) =>
+    renderPage({ ...input, assets: pageAssets, theme: await themes.current() });
 
   const watcher = livereload
     ? watchTree(root, { ignore: (path) => isSkippedPath(path, dotfiles) })
@@ -250,11 +271,11 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
     return result;
   };
 
-  const notFound = (request: Request, pathname: string) =>
+  const notFound = async (request: Request, pathname: string) =>
     respond(
       request,
       makeBody(
-        page({
+        await page({
           title: "Not found",
           content: renderStatus(404, "Not found", `There is no file at ${pathname}.`),
           crumbs: crumbsFor(pathname, rootName),
@@ -265,11 +286,11 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
       { status: 404 },
     );
 
-  const failure = (request: Request, pathname: string, error: unknown, source = pathname) =>
+  const failure = async (request: Request, pathname: string, error: unknown, source = pathname) =>
     respond(
       request,
       makeBody(
-        page({
+        await page({
           title: "Render error",
           content: renderStatus(
             500,
@@ -292,7 +313,7 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
     info: Stats,
     source: string,
   ): Promise<Response> => {
-    const stamp = `${info.mtimeMs}:${info.size}`;
+    const stamp = `${info.mtimeMs}:${info.size}:${themes.version()}`;
     const cached = pages.get(pathname);
     if (cached?.stamp === stamp) {
       return respond(request, cached.body, {
@@ -306,7 +327,7 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
       return failure(request, pathname, error, source);
     }
     const { rendered, ms } = timed;
-    const html = page({
+    const html = await page({
       title: rendered.title ?? basename(path),
       description: rendered.description,
       content: rendered.html,
@@ -353,7 +374,7 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
     }
     const ms = performance.now() - started;
     const count = directory.entries.length;
-    const html = page({
+    const html = await page({
       title: pathname === "/" ? rootName : pathname.slice(1),
       content,
       contentClass: "cms-directory",
@@ -384,10 +405,14 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
         const unsubscribe = watcher.subscribe((paths) => {
           send(`event: change\ndata: ${JSON.stringify({ paths })}\n\n`);
         });
+        const unsubscribeTheme = themes.subscribe((theme) => {
+          send(`event: theme\ndata: ${JSON.stringify({ theme })}\n\n`);
+        });
         const ping = setInterval(() => send(": ping\n\n"), 25_000);
         close = () => {
           clearInterval(ping);
           unsubscribe();
+          unsubscribeTheme();
           streams.delete(close);
           try {
             controller.close();
@@ -420,6 +445,7 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
       return Response.json(await search.get(), { headers: { "cache-control": "no-cache" } });
     }
     if (name === "events") return events(request);
+    if (name.startsWith("themes/")) return themes.handle(request, name.slice("themes/".length));
     if (name.startsWith("katex/")) {
       const url = new URL(request.url);
       url.pathname = `/${name.slice("katex/".length)}`;
@@ -474,7 +500,7 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
   return {
     root,
     warmup: async () => {
-      await getRenderer();
+      await Promise.all([getRenderer(), themes.current()]);
     },
     fetch: async (request) => {
       try {
@@ -485,7 +511,7 @@ export function createHandler(options: ComarkservOptions = {}): ComarkservHandle
       }
     },
     close: async () => {
-      await watcher?.close();
+      await Promise.all([watcher?.close(), themes.close()]);
       for (const close of streams) close();
     },
   };

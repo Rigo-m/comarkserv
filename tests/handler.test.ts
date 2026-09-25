@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { brotliDecompressSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
 import { createHandler } from "../src/handler.ts";
@@ -212,6 +213,44 @@ describe("internal endpoints", () => {
   });
 });
 
+describe("themes", () => {
+  const nordYaml = `name: "Nord"\nvariant: "dark"\npalette:\n${Array.from({ length: 16 }, (_, i) => `  base0${i.toString(16).toUpperCase()}: "#2e3440"`).join("\n")}\n`;
+
+  test("puts the default theme in the head of each page", async () => {
+    await fixture.write("nord.yaml", nordYaml);
+    const themed = createHandler({
+      root: fixture.root,
+      livereload: false,
+      theme: join(fixture.root, "nord.yaml"),
+    });
+    try {
+      const html = await (await themed.fetch(new Request("http://localhost/guide.md"))).text();
+      const head = html.slice(0, html.indexOf("</head>"));
+      expect(head).toContain('"id":"file:nord.yaml"');
+      expect(head).toContain('"colors":["#2e3440"');
+    } finally {
+      await themed.close();
+    }
+  });
+
+  test("puts no theme in the page for the GitHub theme", async () => {
+    const html = await (await get("/guide.md")).text();
+    expect(html).toContain("})(null);</script>");
+  });
+
+  test("gives the catalog URL to the client and answers the theme endpoints", async () => {
+    const html = await (await get("/guide.md")).text();
+    expect(html).toContain('"themes":"/__comarkserv/themes/catalog.json"');
+    expect((await get("/__comarkserv/themes/raw/evil/x")).status).toBe(404);
+  });
+
+  test("serves a stylesheet that maps the palette slots", async () => {
+    const css = await (await get("/__comarkserv/app.css")).text();
+    expect(css).toContain(":root[data-cms-palette]");
+    expect(css).toContain("--twp-keyword: var(--b0E);");
+  });
+});
+
 describe("live reload", () => {
   test("injects the client into static HTML pages only when live reload is on", async () => {
     expect(await (await get("/static/index.html")).text()).not.toContain("__comarkserv");
@@ -219,6 +258,31 @@ describe("live reload", () => {
     try {
       const response = await live.fetch(new Request("http://localhost/static/index.html"));
       expect(await response.text()).toContain("/__comarkserv/app.js");
+    } finally {
+      await live.close();
+    }
+  });
+
+  test("sends a theme event when the theme file changes", async () => {
+    const scheme = (color: string) =>
+      `name: "Live"\nvariant: "dark"\npalette:\n${Array.from({ length: 16 }, (_, i) => `  base0${i.toString(16).toUpperCase()}: "${color}"`).join("\n")}\n`;
+    await fixture.write("live-theme.yaml", scheme("#111111"));
+    const live = createHandler({
+      root: fixture.root,
+      theme: join(fixture.root, "live-theme.yaml"),
+    });
+    try {
+      const response = await live.fetch(new Request("http://localhost/__comarkserv/events"));
+      const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+      let text = "";
+      while (!text.includes("event: hello")) text += (await reader.read()).value ?? "";
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await fixture.write("live-theme.yaml", scheme("#222222"));
+      while (!text.includes("event: theme")) text += (await reader.read()).value ?? "";
+      expect(text).toContain('"colors":["#222222"');
+      await reader.cancel();
+      const html = await (await live.fetch(new Request("http://localhost/guide.md"))).text();
+      expect(html).toContain('"colors":["#222222"');
     } finally {
       await live.close();
     }

@@ -1,3 +1,6 @@
+import { parseTheme } from "./theme-parse.ts";
+import type { Palette } from "./theme-parse.ts";
+
 /** Settings that the page gives to the client script, in the `#cms-config` JSON element. */
 export interface ClientConfig {
   /** The URL prefix of the site root: `/` on the server, a relative path in a static build. */
@@ -6,19 +9,97 @@ export interface ClientConfig {
   search: string;
   /** The URL of the live reload event stream, or an empty string when live reload is off. */
   events: string;
+  /** The URL of the theme catalog, or an empty string when there is none. */
+  themes: string;
   /** The URL path of the source of this page, from the site root. Live reload compares changes with it. */
   source: string;
   /** The type of page. */
   kind: "markdown" | "directory" | "html" | "status";
 }
 
-// The client runs in the browser. The server sends `client.toString()`, so the
-// function must not use anything from outside its body.
-export function client(): void {
+/** A theme choice: a palette, or a mode of the built-in GitHub theme. */
+export type ThemeChoice = Palette | { mode: "system" | "light" | "dark" };
+
+/** The theme functions that the head script gives to the client script. */
+export interface ThemeRuntime {
+  /** The theme of the server, or `null` for the built-in GitHub theme. */
+  defaultTheme: Palette | null;
+  /** Returns the choice of the viewer, or `null` when the viewer follows the default. */
+  read: () => ThemeChoice | null;
+  apply: (theme: ThemeChoice | null) => void;
+  /** Returns the theme to show: the choice of the viewer, else the default. */
+  current: () => ThemeChoice;
+}
+
+declare global {
+  interface Window {
+    __cms?: ThemeRuntime;
+  }
+}
+
+/**
+ * Applies the theme before the first paint, so the page does not flash. The page
+ * puts it inline in the head, with the default theme of the server as its argument.
+ * It must not use anything from outside its body.
+ */
+export function themeBoot(defaultTheme: Palette | null): void {
+  const root = document.documentElement;
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  const hex = /^#[0-9a-f]{6}$/i;
+  const slots = "0123456789ABCDEF".split("").map((slot) => `--b0${slot}`);
+  const isPalette = (theme: ThemeChoice | null): theme is Palette =>
+    !!theme &&
+    "colors" in theme &&
+    Array.isArray(theme.colors) &&
+    theme.colors.length === 16 &&
+    theme.colors.every((color) => hex.test(color));
+  const read = (): ThemeChoice | null => {
+    try {
+      const raw = localStorage.getItem("cms-theme");
+      if (!raw) return null;
+      // Earlier versions stored the mode as a plain string.
+      if (raw === "system" || raw === "light" || raw === "dark") return { mode: raw };
+      return JSON.parse(raw) as ThemeChoice;
+    } catch {
+      return null;
+    }
+  };
+  const apply = (theme: ThemeChoice | null) => {
+    for (const slot of slots) root.style.removeProperty(slot);
+    root.style.removeProperty("--b-accent");
+    if (isPalette(theme)) {
+      theme.colors.forEach((color, index) => root.style.setProperty(slots[index] ?? "", color));
+      if (theme.accent && hex.test(theme.accent))
+        root.style.setProperty("--b-accent", theme.accent);
+      root.dataset.cmsPalette = theme.id;
+      root.dataset.theme = "palette";
+      root.classList.toggle("dark", theme.variant === "dark");
+      return;
+    }
+    const mode = theme && "mode" in theme ? theme.mode : "system";
+    delete root.dataset.cmsPalette;
+    root.dataset.theme = mode;
+    root.classList.toggle("dark", mode === "dark" || (mode === "system" && media.matches));
+  };
+  const runtime: ThemeRuntime = {
+    defaultTheme,
+    read,
+    apply,
+    current: () => read() ?? runtime.defaultTheme ?? { mode: "system" },
+  };
+  window.__cms = runtime;
+  media.addEventListener("change", () => apply(runtime.current()));
+  apply(runtime.current());
+}
+
+// The client runs in the browser. The server sends `client.toString()` with
+// `parseTheme.toString()` as its argument, so the function must not use
+// anything from outside its body.
+export function client(parse: typeof parseTheme): void {
   const doc = document;
-  const root = doc.documentElement;
   const configText = doc.getElementById("cms-config")?.textContent;
   const config = JSON.parse(configText ?? "{}") as ClientConfig;
+  const themes = window.__cms;
   const all = <T extends Element>(selector: string, scope: ParentNode = doc): T[] => [
     ...scope.querySelectorAll<T>(selector),
   ];
@@ -37,24 +118,15 @@ export function client(): void {
         return null;
       }
     },
-    set: (key: string, value: string) => {
+    set: (key: string, value: string | null) => {
       try {
-        localStorage.setItem(key, value);
+        if (value === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
       } catch {
         // Storage is not available, for example in a private window.
       }
     },
   };
-
-  // Theme: system, light or dark. The inline head script sets it before the first paint.
-  const media = matchMedia("(prefers-color-scheme: dark)");
-  const applyTheme = (theme: string) => {
-    root.dataset.theme = theme;
-    root.classList.toggle("dark", theme === "dark" || (theme === "system" && media.matches));
-  };
-  media.addEventListener("change", () => applyTheme(store.get("cms-theme") ?? "system"));
-  applyTheme(store.get("cms-theme") ?? "system");
-  const nextTheme: Record<string, string> = { system: "light", light: "dark", dark: "system" };
 
   // Content: heading anchors, copy buttons and code group tabs.
   const content = doc.getElementById("cms-content");
@@ -138,13 +210,8 @@ export function client(): void {
       selectTab(label);
       return;
     }
-    if (target?.closest("[data-cms-theme]")) {
-      const theme = nextTheme[store.get("cms-theme") ?? "system"] ?? "system";
-      store.set("cms-theme", theme);
-      applyTheme(theme);
-      return;
-    }
-    if (target?.closest("[data-cms-search]")) openPalette();
+    if (target?.closest("[data-cms-theme]")) openPalette("theme");
+    else if (target?.closest("[data-cms-search]")) openPalette("search");
   });
 
   // Table of contents: marks the section that is at the top of the screen.
@@ -162,7 +229,44 @@ export function client(): void {
   };
   addEventListener("scroll", () => (spyFrame ||= requestAnimationFrame(spy)), { passive: true });
 
-  // Search palette.
+  // Fuzzy matching for the palette.
+  const isBoundary = (char: string | undefined) => !char || /[\s/._\-›:]/.test(char);
+  const fuzzy = (query: string, text: string): { score: number; hits: number[] } | undefined => {
+    const lower = text.toLowerCase();
+    const at = lower.indexOf(query);
+    if (at >= 0) {
+      const hits = Array.from({ length: query.length }, (_, i) => at + i);
+      return {
+        score: 100 + (isBoundary(lower[at - 1]) ? 40 : 0) - at * 0.5 - lower.length * 0.05,
+        hits,
+      };
+    }
+    const hits: number[] = [];
+    let score = 0;
+    let from = 0;
+    for (const char of query) {
+      if (char === " ") continue;
+      const i = lower.indexOf(char, from);
+      if (i < 0) return undefined;
+      const last = hits.at(-1);
+      score += last !== undefined && i === last + 1 ? 6 : isBoundary(lower[i - 1]) ? 4 : 1;
+      hits.push(i);
+      from = i + 1;
+    }
+    return { score: score - lower.length * 0.05, hits };
+  };
+  // The hits are UTF-16 indices from indexOf, so the loop uses the same indices.
+  const mark = (text: string, hits: number[]) => {
+    const set = new Set(hits);
+    let html = "";
+    for (let i = 0; i < text.length; i++) {
+      const char = escape(text.charAt(i));
+      html += set.has(i) ? `<mark>${char}</mark>` : char;
+    }
+    return html;
+  };
+
+  // Search: pages and headings.
   interface Entry {
     url: string;
     title: string;
@@ -201,130 +305,306 @@ export function client(): void {
         return [];
       }));
 
-  const isBoundary = (char: string | undefined) => !char || /[\s/._\-›]/.test(char);
-  const fuzzy = (query: string, text: string): { score: number; hits: number[] } | undefined => {
-    const lower = text.toLowerCase();
-    const at = lower.indexOf(query);
-    if (at >= 0) {
-      const hits = Array.from({ length: query.length }, (_, i) => at + i);
-      return {
-        score: 100 + (isBoundary(lower[at - 1]) ? 40 : 0) - at * 0.5 - lower.length * 0.05,
-        hits,
-      };
+  const searchResults = async (needle: string) => {
+    const items = await loadIndex();
+    if (!needle) {
+      return items
+        .filter((item) => item.page)
+        .map((item) => ({ item, titleHits: [], pathHits: [] }));
     }
-    const hits: number[] = [];
-    let score = 0;
-    let from = 0;
-    for (const char of query) {
-      if (char === " ") continue;
-      const i = lower.indexOf(char, from);
-      if (i < 0) return undefined;
-      const last = hits.at(-1);
-      score += last !== undefined && i === last + 1 ? 6 : isBoundary(lower[i - 1]) ? 4 : 1;
-      hits.push(i);
-      from = i + 1;
+    const results: { item: Item; score: number; titleHits: number[]; pathHits: number[] }[] = [];
+    for (const item of items) {
+      const title = fuzzy(needle, item.title);
+      const path = fuzzy(needle, item.path);
+      if (!title && !path) continue;
+      const score =
+        Math.max((title?.score ?? -Infinity) + 10, path?.score ?? -Infinity) + (item.page ? 8 : 0);
+      results.push({
+        item,
+        score,
+        titleHits: title?.hits ?? [],
+        pathHits: title ? [] : (path?.hits ?? []),
+      });
     }
-    return { score: score - lower.length * 0.05, hits };
-  };
-  // The hits are UTF-16 indices from indexOf, so the loop uses the same indices.
-  const mark = (text: string, hits: number[]) => {
-    const set = new Set(hits);
-    let html = "";
-    for (let i = 0; i < text.length; i++) {
-      const char = escape(text.charAt(i));
-      html += set.has(i) ? `<mark>${char}</mark>` : char;
-    }
-    return html;
+    return results.sort((a, b) => b.score - a.score);
   };
 
+  // Themes: the built-in GitHub modes, the server default and the catalog.
+  interface ThemeEntry {
+    id: string;
+    name: string;
+    source: string;
+    url?: string;
+    choice?: ThemeChoice;
+    /** The swatches of a built-in theme. */
+    colors?: string[];
+  }
+  const GITHUB_LIGHT = [
+    "#ffffff",
+    "#1f2328",
+    "#cf222e",
+    "#953800",
+    "#9a6700",
+    "#1a7f37",
+    "#0969da",
+    "#8250df",
+  ];
+  const GITHUB_DARK = [
+    "#0d1117",
+    "#e6edf3",
+    "#ff7b72",
+    "#ffa657",
+    "#d29922",
+    "#3fb950",
+    "#58a6ff",
+    "#d2a8ff",
+  ];
+  const builtIns = (): ThemeEntry[] => [
+    ...(themes?.defaultTheme
+      ? [
+          {
+            id: "default",
+            name: `Default: ${themes.defaultTheme.name}`,
+            source: "server",
+            choice: themes.defaultTheme,
+          },
+        ]
+      : []),
+    {
+      id: "github-system",
+      name: "GitHub",
+      source: "system",
+      choice: { mode: "system" },
+      colors: GITHUB_LIGHT,
+    },
+    {
+      id: "github-light",
+      name: "GitHub Light",
+      source: "built-in",
+      choice: { mode: "light" },
+      colors: GITHUB_LIGHT,
+    },
+    {
+      id: "github-dark",
+      name: "GitHub Dark",
+      source: "built-in",
+      choice: { mode: "dark" },
+      colors: GITHUB_DARK,
+    },
+  ];
+  let catalog: Promise<ThemeEntry[]> | undefined;
+  const loadCatalog = () =>
+    (catalog ??= (config.themes ? fetch(config.themes) : Promise.reject(new Error("no catalog")))
+      .then((response) => (response.ok ? (response.json() as Promise<ThemeEntry[]>) : []))
+      .catch(() => {
+        catalog = undefined;
+        return [];
+      }));
+  const palettes = new Map<string, Promise<Palette | undefined>>();
+  const loadTheme = (entry: ThemeEntry): Promise<ThemeChoice | undefined> => {
+    if (entry.choice) return Promise.resolve(entry.choice);
+    if (!entry.url) return Promise.resolve(undefined);
+    let palette = palettes.get(entry.url);
+    if (!palette) {
+      palette = fetch(entry.url)
+        .then((response) => (response.ok ? response.text() : ""))
+        .then((text) => parse(text, entry.id, entry.name))
+        .catch(() => undefined);
+      palettes.set(entry.url, palette);
+    }
+    return palette;
+  };
+  // The swatches show the background, the text, then red, orange, yellow, green, blue and purple.
+  const swatches = (colors: string[]) =>
+    colors.map((color) => `<i style="background:${escape(color)}"></i>`).join("");
+  const paletteSwatches = (theme: ThemeChoice) =>
+    "colors" in theme
+      ? [0, 5, 8, 9, 10, 11, 13, 14].map((slot) => theme.colors[slot] ?? "")
+      : theme.mode === "dark"
+        ? GITHUB_DARK
+        : GITHUB_LIGHT;
+  const choiceId = (theme: ThemeChoice | null) => {
+    if (!theme) return themes?.defaultTheme ? "default" : "github-system";
+    return "colors" in theme ? theme.id : `github-${theme.mode}`;
+  };
+
+  let themeEntries: ThemeEntry[] = [];
+  const themeResults = async (needle: string) => {
+    themeEntries = [...builtIns(), ...(await loadCatalog())];
+    if (!needle) return themeEntries.map((entry) => ({ entry, hits: [] as number[] }));
+    const results: { entry: ThemeEntry; score: number; hits: number[] }[] = [];
+    for (const entry of themeEntries) {
+      const match = fuzzy(needle, `${entry.name} ${entry.source}`);
+      // The pinned entries come first when they match, before a catalog theme with a similar name.
+      const pinned = !entry.url || entry.source === "omarchy-live";
+      if (match)
+        results.push({
+          entry,
+          score: match.score + (pinned ? 50 : 0),
+          hits: match.hits.filter((hit) => hit < entry.name.length),
+        });
+    }
+    return results.sort((a, b) => b.score - a.score);
+  };
+
+  // The palette dialog, in search mode or in theme mode.
   let palette: HTMLDialogElement | undefined;
+  let mode: "search" | "theme" = "search";
   let selected = 0;
-  const openPalette = () => {
+  let committed = false;
+  let previewTimer: ReturnType<typeof setTimeout> | undefined;
+  let swatchObserver: IntersectionObserver | undefined;
+
+  const items = () => all<HTMLLIElement>("li[role=option]", palette);
+  const select = (next: number) => {
+    const list = items();
+    selected = (next + list.length) % Math.max(list.length, 1);
+    list.forEach((item, i) => item.setAttribute("aria-selected", String(i === selected)));
+    list[selected]?.scrollIntoView({ block: "nearest" });
+    if (mode === "theme") {
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(() => void preview(list[selected]), 40);
+    }
+  };
+  const entryOf = (item: Element | undefined) =>
+    themeEntries[Number((item as HTMLElement | undefined)?.dataset.entry)];
+  const preview = async (item: Element | undefined) => {
+    const entry = entryOf(item);
+    const theme = entry && (await loadTheme(entry));
+    if (theme && item?.getAttribute("aria-selected") === "true") themes?.apply(theme);
+  };
+  const commitTheme = async (item: Element | undefined) => {
+    const entry = entryOf(item);
+    const theme = entry && (await loadTheme(entry));
+    if (!entry || !theme) return;
+    committed = true;
+    store.set("cms-theme", entry.id === "default" ? null : JSON.stringify(theme));
+    themes?.apply(themes.current());
+    palette?.close();
+  };
+
+  const openPalette = (next: "search" | "theme") => {
+    if (next === "theme" && !themes) return;
     if (!palette) {
       palette = doc.createElement("dialog");
       palette.className = "cms-palette";
       palette.innerHTML =
-        '<input type="search" placeholder="Search pages and headings" aria-label="Search" autocomplete="off" spellcheck="false">' +
+        '<input type="search" aria-label="Search" autocomplete="off" spellcheck="false">' +
         '<ul role="listbox"></ul>' +
-        '<div class="cms-hint"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div>';
+        '<div class="cms-hint"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>↵</kbd> <span class="cms-hint-enter">open</span></span><span><kbd>esc</kbd> close</span></div>';
       doc.body.append(palette);
       const input = palette.querySelector("input")!;
       input.addEventListener("input", () => void renderResults(input.value));
       input.addEventListener("keydown", (event) => {
-        const items = all<HTMLLIElement>("li[role=option]", palette);
-        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        // A search input clears its text on the first Escape. The palette closes at once instead.
+        if (event.key === "Escape") {
           event.preventDefault();
-          selected =
-            (selected + (event.key === "ArrowDown" ? 1 : -1) + items.length) %
-            Math.max(items.length, 1);
-          items.forEach((item, i) => item.setAttribute("aria-selected", String(i === selected)));
-          items[selected]?.scrollIntoView({ block: "nearest" });
+          palette?.close();
+        } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          select(selected + (event.key === "ArrowDown" ? 1 : -1));
         } else if (event.key === "Enter") {
-          const link = items[selected]?.querySelector("a");
-          if (!link) return;
           event.preventDefault();
+          const item = items()[selected];
+          if (mode === "theme") return void commitTheme(item);
+          const link = item?.querySelector("a");
+          if (!link) return;
           if (event.metaKey || event.ctrlKey) open(link.href, "_blank");
           else location.href = link.href;
           palette?.close();
         }
       });
       palette.addEventListener("click", (event) => {
-        if (event.target === palette) palette.close();
+        if (event.target === palette) return palette.close();
+        const item =
+          event.target instanceof Element ? event.target.closest("li[role=option]") : null;
+        if (mode === "theme" && item) void commitTheme(item);
       });
       palette.addEventListener("mousemove", (event) => {
         const item =
           event.target instanceof Element ? event.target.closest("li[role=option]") : null;
-        if (!item) return;
-        const items = all("li[role=option]", palette);
-        selected = items.indexOf(item);
-        items.forEach((other, i) => other.setAttribute("aria-selected", String(i === selected)));
+        const index = item ? items().indexOf(item as HTMLLIElement) : -1;
+        if (index >= 0 && index !== selected) select(index);
+      });
+      // Closing the theme mode with no choice shows the theme from before again.
+      palette.addEventListener("close", () => {
+        clearTimeout(previewTimer);
+        if (mode === "theme" && !committed) themes?.apply(themes.current());
       });
     }
-    palette.showModal();
+    mode = next;
+    committed = false;
     const input = palette.querySelector("input")!;
-    input.select();
-    void renderResults(input.value);
+    input.value = "";
+    input.placeholder = mode === "theme" ? "Search 580+ themes" : "Search pages and headings";
+    const enter = palette.querySelector(".cms-hint-enter");
+    if (enter) enter.textContent = mode === "theme" ? "keep" : "open";
+    palette.showModal();
+    input.focus();
+    void renderResults("");
   };
+
+  // Each theme loads its swatches when it comes into view, so the list stays fast.
+  const observeSwatches = (list: HTMLUListElement) => {
+    swatchObserver?.disconnect();
+    swatchObserver = new IntersectionObserver(
+      (records) => {
+        for (const record of records) {
+          if (!record.isIntersecting) continue;
+          swatchObserver?.unobserve(record.target);
+          const entry = entryOf(record.target);
+          const target = record.target.querySelector(".cms-swatches");
+          if (!entry || !target) continue;
+          if (entry.colors) target.innerHTML = swatches(entry.colors);
+          else
+            void loadTheme(entry).then(
+              (theme) => theme && (target.innerHTML = swatches(paletteSwatches(theme))),
+            );
+        }
+      },
+      { root: list },
+    );
+    for (const item of items()) swatchObserver.observe(item);
+  };
+
   const renderResults = async (query: string) => {
-    const items = await loadIndex();
     const list = palette?.querySelector("ul");
     if (!list) return;
     const needle = query.trim().toLowerCase();
-    let results: { item: Item; score: number; titleHits: number[]; pathHits: number[] }[];
-    if (!needle) {
-      results = items
-        .filter((item) => item.page)
-        .map((item) => ({ item, score: 0, titleHits: [], pathHits: [] }));
+    const current = mode;
+    let html: string;
+    if (current === "theme") {
+      const results = await themeResults(needle);
+      const active = choiceId(themes?.read() ?? null);
+      html = results
+        .map(
+          ({ entry, hits }, i) =>
+            `<li role="option" aria-selected="${i === 0}" data-entry="${themeEntries.indexOf(entry)}"${entry.id === active ? " data-active" : ""}>` +
+            `<div class="cms-hit cms-theme-hit"><span class="cms-hit-title">${mark(entry.name, hits)}<small>${escape(entry.source)}</small></span>` +
+            `<span class="cms-swatches"></span></div></li>`,
+        )
+        .join("");
     } else {
-      results = [];
-      for (const item of items) {
-        const title = fuzzy(needle, item.title);
-        const path = fuzzy(needle, item.path);
-        if (!title && !path) continue;
-        const score =
-          Math.max((title?.score ?? -Infinity) + 10, path?.score ?? -Infinity) +
-          (item.page ? 8 : 0);
-        results.push({
-          item,
-          score,
-          titleHits: title?.hits ?? [],
-          pathHits: title ? [] : (path?.hits ?? []),
-        });
-      }
-      results.sort((a, b) => b.score - a.score);
+      const results = await searchResults(needle);
+      html = results
+        .slice(0, 60)
+        .map(
+          ({ item, titleHits, pathHits }, i) =>
+            `<li role="option" aria-selected="${i === 0}"><a class="cms-hit" href="${escape(item.url)}">` +
+            `<span class="cms-hit-title">${item.page ? "" : "# "}${mark(item.title, titleHits)}</span>` +
+            `<span class="cms-hit-path">${mark(item.path, pathHits)}</span></a></li>`,
+        )
+        .join("");
     }
+    if (current !== mode) return;
     selected = 0;
-    list.innerHTML = results.length
-      ? results
-          .slice(0, 60)
-          .map(
-            ({ item, titleHits, pathHits }, i) =>
-              `<li role="option" aria-selected="${i === 0}"><a href="${escape(item.url)}">` +
-              `<span class="cms-hit-title">${item.page ? "" : "# "}${mark(item.title, titleHits)}</span>` +
-              `<span class="cms-hit-path">${mark(item.path, pathHits)}</span></a></li>`,
-          )
-          .join("")
-      : '<li class="cms-none">No results</li>';
+    list.innerHTML = html || '<li class="cms-none">No results</li>';
+    list.scrollTop = 0;
+    if (current !== "theme") return;
+    observeSwatches(list);
+    // With no query, the list opens at the theme that is active now.
+    const active = items().findIndex((item) => item.hasAttribute("data-active"));
+    if (!needle && active > 0) select(active);
   };
 
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -336,7 +616,7 @@ export function client(): void {
     if ((event.key === "k" && (event.metaKey || event.ctrlKey)) || (event.key === "/" && !typing)) {
       event.preventDefault();
       if (palette?.open) palette.close();
-      else openPalette();
+      else openPalette("search");
     }
   });
 
@@ -435,6 +715,20 @@ export function client(): void {
     }
   };
 
+  // A theme changed on the server: the default theme file, or the current Omarchy theme.
+  const onTheme = (theme: Palette) => {
+    if (!themes) return;
+    const chosen = themes.read();
+    if (chosen && "colors" in chosen && chosen.id === theme.id) {
+      store.set("cms-theme", JSON.stringify(theme));
+    } else if (!chosen && themes.defaultTheme?.id === theme.id) {
+      themes.defaultTheme = theme;
+    } else {
+      return;
+    }
+    if (!(mode === "theme" && palette?.open)) themes.apply(themes.current());
+  };
+
   if (config.events) {
     const indicator = doc.querySelector<HTMLElement>(".cms-live");
     let serverId: string | undefined;
@@ -452,6 +746,9 @@ export function client(): void {
     events.addEventListener("change", (event) =>
       onChange((JSON.parse(event.data) as { paths: string[] }).paths),
     );
+    events.addEventListener("theme", (event) =>
+      onTheme((JSON.parse(event.data) as { theme: Palette }).theme),
+    );
     events.addEventListener("error", () => {
       if (indicator) {
         indicator.dataset.state = "closed";
@@ -466,12 +763,10 @@ export function client(): void {
 }
 
 /** The client script, ready to serve. */
-export const clientScript = `(${client.toString()})();\n`;
+export const clientScript = `(${client.toString()})(${parseTheme.toString()});\n`;
 
-/**
- * Sets the theme class before the first paint, so a dark page does not flash
- * light while it loads. The page puts it inline in the head.
- */
-export const themeScript =
-  '(()=>{try{var t=localStorage.getItem("cms-theme")||"system",d=document.documentElement;' +
-  'd.dataset.theme=t;if(t==="dark"||(t==="system"&&matchMedia("(prefers-color-scheme: dark)").matches))d.classList.add("dark")}catch(e){}})()';
+/** The inline head script, with the default theme of the server. */
+export function themeScript(defaultTheme: Palette | undefined): string {
+  const json = JSON.stringify(defaultTheme ?? null).replace(/</g, "\\u003c");
+  return `(${themeBoot.toString()})(${json});`;
+}

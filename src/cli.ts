@@ -7,6 +7,7 @@ import { styleText } from "node:util";
 import { defineCommand, runMain } from "citty";
 import { basename, dirname, relative, resolve } from "pathe";
 import { DEFAULT_PORT, startServer } from "./server.ts";
+import { createThemeStore, OMARCHY_CURRENT } from "./themes.ts";
 
 const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
 
@@ -46,6 +47,13 @@ function openBrowser(url: string): void {
 const commonArgs = {
   "line-numbers": { type: "boolean", description: "Show line numbers on all code blocks" },
   dotfiles: { type: "boolean", description: "Include dotfiles, such as .github/" },
+  theme: {
+    type: "string",
+    description:
+      "The default theme: github, base16:<id>, base24:<id>, omarchy:<id>, omarchy (live), a .yaml or .toml file, or a URL. Run `comarkserv themes` for the list",
+    default: "github",
+    valueHint: "name",
+  },
 } as const;
 
 const serveCommand = defineCommand({
@@ -92,8 +100,15 @@ const serveCommand = defineCommand({
     if (!Number.isInteger(port) || port < 0 || port > 65_535)
       fail("--port must be a number from 0 to 65535.");
 
+    // The theme loads before the server starts, so a typo stops here with a clear message.
+    // The load also fills the cache, so the first page does not wait for the network.
+    const theme = await createThemeStore()
+      .load(args.theme)
+      .catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));
+
     const server = await startServer({
       root: isFile ? dirname(target) : target,
+      theme: args.theme,
       port,
       host: args.host,
       strictPort: args["strict-port"],
@@ -120,6 +135,7 @@ const serveCommand = defineCommand({
         : []),
       `  ${label("Root")}${display(server.handler.root)}`,
       `  ${label("Reload")}${args.livereload ? "on" : "off"}`,
+      `  ${label("Theme")}${theme ? `${theme.name} ${styleText("dim", `(${args.theme})`)}` : "GitHub"}`,
       "",
       styleText("dim", "  Press Ctrl+C to stop."),
       "",
@@ -167,7 +183,9 @@ const buildCommand = defineCommand({
       outDir: resolve(args.out),
       lineNumbers: args["line-numbers"],
       dotfiles: args.dotfiles,
+      theme: args.theme,
     }).catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));
+    for (const warning of result.warnings) console.warn(styleText("yellow", `! ${warning}`));
     console.log(
       `${styleText("green", "✓")} Built ${plural(result.pages, "page")} and copied ${plural(result.files, "file")} ` +
         `to ${display(result.outDir)} in ${Math.round(result.ms)} ms`,
@@ -175,7 +193,41 @@ const buildCommand = defineCommand({
   },
 });
 
-// citty reads a path argument as a subcommand name, so the build command is found here.
+const themesCommand = defineCommand({
+  meta: { name: "comarkserv themes", version, description: "List the themes for --theme" },
+  args: {
+    filter: { type: "positional", description: "Show only the themes with this text", default: "" },
+  },
+  async run({ args }) {
+    const entries = await createThemeStore()
+      .catalog()
+      .catch((error: unknown) =>
+        fail(
+          `The theme list is not available: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    const rows = [
+      { id: "github", name: "GitHub, built in (the default)" },
+      ...(existsSync(OMARCHY_CURRENT)
+        ? [{ id: "omarchy", name: "The current Omarchy theme, live" }]
+        : []),
+      ...entries,
+    ];
+    const filter = args.filter.toLowerCase();
+    const shown = rows.filter((row) => `${row.id} ${row.name}`.toLowerCase().includes(filter));
+    const width = Math.max(0, ...shown.map((row) => row.id.length));
+    for (const row of shown) console.log(`${row.id.padEnd(width)}  ${styleText("dim", row.name)}`);
+    console.log(
+      styleText(
+        "dim",
+        `\n${plural(shown.length, "theme")}. Use one with --theme <id>, or give a .yaml or .toml file.`,
+      ),
+    );
+  },
+});
+
+// citty reads a path argument as a subcommand name, so the subcommands are found here.
 const argv = process.argv.slice(2);
 if (argv[0] === "build") await runMain(buildCommand, { rawArgs: argv.slice(1) });
+else if (argv[0] === "themes") await runMain(themesCommand, { rawArgs: argv.slice(1) });
 else await runMain(serveCommand, { rawArgs: argv });

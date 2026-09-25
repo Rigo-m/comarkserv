@@ -8,22 +8,22 @@ npx comarkserv ./docs
 
 ## Features
 
-| Feature                                                         |     markserv     |                                   comarkserv                                    |
-| --------------------------------------------------------------- | :--------------: | :-----------------------------------------------------------------------------: |
-| GitHub flavored markdown, frontmatter                           |        ✓         |                                        ✓                                        |
-| Directory listing                                               |        ✓         |                           ✓, with the README below it                           |
-| Live reload                                                     | Reloads the page | Replaces only the changed blocks, keeps the scroll position, flashes the change |
-| Syntax highlighting                                             |   highlight.js   |                 twinkleplop, 15 languages, loaded on first use                  |
-| Code block meta: titles, line and word highlights, line numbers |                  |                                        ✓                                        |
-| Components (`::tip`, `::code-group`, `::details`, …)            |                  |                                        ✓                                        |
-| GitHub alerts (`> [!NOTE]`)                                     |                  |                                        ✓                                        |
-| Math (KaTeX)                                                    |                  |                            ✓, rendered on the server                            |
-| Mermaid diagrams                                                |                  |                        ✓, rendered to SVG on the server                         |
-| Search of pages and headings (<kbd>⌘</kbd> <kbd>K</kbd>)        |                  |                                        ✓                                        |
-| Table of contents with the current section                      |                  |                                        ✓                                        |
-| Light, dark and system themes                                   |                  |                                        ✓                                        |
-| Static site build                                               |                  |                                        ✓                                        |
-| Library API (`fetch` handler)                                   |                  |                                        ✓                                        |
+| Feature                                                         |     markserv     |                                    comarkserv                                    |
+| --------------------------------------------------------------- | :--------------: | :------------------------------------------------------------------------------: |
+| GitHub flavored markdown, frontmatter                           |        ✓         |                                        ✓                                         |
+| Directory listing                                               |        ✓         |                           ✓, with the README below it                            |
+| Live reload                                                     | Reloads the page | Replaces only the changed blocks, keeps the scroll position, flashes the change  |
+| Syntax highlighting                                             |   highlight.js   |                  twinkleplop, 15 languages, loaded on first use                  |
+| Code block meta: titles, line and word highlights, line numbers |                  |                                        ✓                                         |
+| Components (`::tip`, `::code-group`, `::details`, …)            |                  |                                        ✓                                         |
+| GitHub alerts (`> [!NOTE]`)                                     |                  |                                        ✓                                         |
+| Math (KaTeX)                                                    |                  |                            ✓, rendered on the server                             |
+| Mermaid diagrams                                                |                  |                         ✓, rendered to SVG on the server                         |
+| Search of pages and headings (<kbd>⌘</kbd> <kbd>K</kbd>)        |                  |                                        ✓                                         |
+| Table of contents with the current section                      |                  |                                        ✓                                         |
+| Themes                                                          |                  | GitHub light and dark, 580+ base16, base24 and Omarchy themes, live Omarchy sync |
+| Static site build                                               |                  |                                        ✓                                         |
+| Library API (`fetch` handler)                                   |                  |                                        ✓                                         |
 
 ## Install
 
@@ -50,17 +50,19 @@ comarkserv ./docs/guide.md  # serve the directory of a file, and open that file
 | `--no-livereload`     | on          | Do not watch the files.                                          |
 | `--line-numbers`      | off         | Show line numbers on all code blocks.                            |
 | `--dotfiles`          | off         | Serve and list dotfiles, such as `.github/`.                     |
+| `--theme <name>`      | `github`    | The default theme. See [Themes](#themes).                        |
 | `-s`, `--silent`      | off         | Do not print the requests.                                       |
 
 Add `?raw` to the URL of a markdown file to get its source. The code button in the top bar does the same.
 
 ### Keyboard shortcuts
 
-| Keys                                                                    | Effect                           |
-| ----------------------------------------------------------------------- | -------------------------------- |
-| <kbd>⌘</kbd> <kbd>K</kbd>, <kbd>Ctrl</kbd> <kbd>K</kbd> or <kbd>/</kbd> | Search the pages and headings    |
-| <kbd>↑</kbd> <kbd>↓</kbd>, <kbd>↵</kbd>                                 | Move in the results and open one |
-| <kbd>⌘</kbd> <kbd>↵</kbd>                                               | Open the result in a new tab     |
+| Keys                                                                    | Effect                                                                                       |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| <kbd>⌘</kbd> <kbd>K</kbd>, <kbd>Ctrl</kbd> <kbd>K</kbd> or <kbd>/</kbd> | Search the pages and headings                                                                |
+| <kbd>↑</kbd> <kbd>↓</kbd>, <kbd>↵</kbd>                                 | Move in the results and open one                                                             |
+| <kbd>⌘</kbd> <kbd>↵</kbd>                                               | Open the result in a new tab                                                                 |
+| The palette button in the top bar                                       | Choose a theme: <kbd>↑</kbd> <kbd>↓</kbd> preview, <kbd>↵</kbd> keep, <kbd>esc</kbd> restore |
 
 ## Build a static site
 
@@ -71,6 +73,37 @@ comarkserv build ./docs --out site
 The build writes one HTML page for each markdown file, a listing page for each directory without an `index.md`, the search index, and the assets. It copies all other files. All links are relative, so the site works on any static host, in a subdirectory too. You can also open the pages from `file://`, but the search needs a server. Links to `.md` files change to `.html`.
 
 The build deletes an earlier build in the output directory. It does not write to a directory that has other files.
+
+## Themes
+
+The GitHub theme is built in, with light, dark and system modes. comarkserv also loads more than 580 themes from their own repositories, when a page needs them:
+
+| `--theme` value                     | Themes                                                                                      |
+| ----------------------------------- | ------------------------------------------------------------------------------------------- |
+| `github` (default)                  | Built in                                                                                    |
+| `base16:<id>`                       | 351 base16 schemes from [tinted-theming/schemes](https://github.com/tinted-theming/schemes) |
+| `base24:<id>`                       | 209 base24 schemes from the same repository                                                 |
+| `omarchy:<id>`                      | The 22 themes of [Omarchy](https://github.com/basecamp/omarchy)                             |
+| `omarchy`                           | The current Omarchy theme of this machine, live                                             |
+| `./my-scheme.yaml`, `./colors.toml` | A local base16 or base24 scheme, or an Omarchy `colors.toml`, live                          |
+| `https://…`                         | A scheme at a URL                                                                           |
+
+```bash
+comarkserv themes gruvbox                         # find the id of a theme
+comarkserv ./docs --theme base16:gruvbox-dark-hard
+```
+
+**The theme picker.** Click the palette button in the top bar, and type a part of a name. The arrow keys preview each theme on the whole page. <kbd>↵</kbd> keeps the theme in this browser, and <kbd>esc</kbd> restores the theme from before. **Default** follows the server again.
+
+**How it works.** A theme is 16 base16 colors. comarkserv maps the page colors and the syntax colors to the 16 slots, so each base16 and base24 scheme works. The keys of an Omarchy `colors.toml` map one-to-one to the slots, and its `accent` is used too.
+
+**Just in time.** comarkserv contains no theme data. The server downloads a theme the first time it is needed: the lists from [UNGH](https://ungh.cc), the files from `raw.githubusercontent.com`. It keeps them in `~/.cache/comarkserv/themes` (or `$XDG_CACHE_HOME`), and it serves them to the browser. So the browser contacts no other server, and a theme works offline after its first use. The browser keeps the chosen palette, so each later page gets its theme before the first paint, with no request.
+
+**Omarchy sync.** With `--theme omarchy`, or with **Omarchy (live)** in the picker, open pages change their theme when you run `omarchy-theme-set`.
+
+**For theme authors.** With `--theme ./my-scheme.yaml`, comarkserv watches the file. Each save updates the open pages.
+
+**Static builds** contain the default theme in each page. Their picker loads the other themes from GitHub directly.
 
 ## Markdown
 
@@ -152,6 +185,9 @@ serve({ fetch: app.fetch });
 - `plugins`: more Comark plugins
 - `components`: more Comark components, or replacements for the built-in ones
 - `lineNumbers`, `dotfiles`, `livereload`
+- `theme`: the default theme, as for `--theme`
+- `themeStore`: replaces the store that downloads and caches the themes, for example to use no network
+- `omarchyPath`: the `colors.toml` of the current Omarchy theme
 
 ## Performance
 
@@ -163,12 +199,15 @@ serve({ fetch: app.fetch });
 - Live reload sends only the changed paths. The page fetches itself and replaces only the changed blocks.
 - The search index reads only titles and headings, with no full parse. After a change, it reads only the changed files.
 - Mermaid SVGs are cached by source, so an edit elsewhere on the page does not render the diagram again.
+- Themes load on first use, from a disk cache after that. The theme list loads only when the picker opens, and each row loads its colors only when it comes into view.
 
-In local tests (macOS, Node.js 24), the server is ready 50–60 ms after the process starts. A render of the [feature showcase](./playground/showcase.md) after an edit takes about 3 ms, and a cached response takes less than 1 ms. Each response has a `Server-Timing` header with the render time.
+In local tests (macOS, Node.js 24), the server is ready 50–60 ms after the process starts with the default theme. A render of the [feature showcase](./playground/showcase.md) after an edit takes about 3 ms, and a cached response takes less than 1 ms. Each response has a `Server-Timing` header with the render time.
 
 ## Security
 
 comarkserv is a tool for your own files. It binds to `localhost` by default, and it does not serve dotfiles or files outside the root. Markdown can contain raw HTML and scripts, as on markserv. Do not serve markdown that you do not trust on a network.
+
+Theme files come from the network, and their colors go into CSS. So comarkserv accepts only hex colors from a theme, in the server and in the browser. The theme endpoint of the server downloads files only from the two theme repositories, so it is not an open proxy.
 
 ## Development
 

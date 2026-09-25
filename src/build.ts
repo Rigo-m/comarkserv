@@ -11,6 +11,8 @@ import type { Crumb, PageInput } from "./page.ts";
 import { createSearchIndex } from "./search.ts";
 import { crumbsFor, isMarkdown, mapLimit, readDirectory, SKIPPED_GLOBS } from "./site.ts";
 import type { LinkStyle } from "./site.ts";
+import { createThemeStore } from "./themes.ts";
+import type { ThemeStore } from "./themes.ts";
 
 export interface BuildOptions extends MarkdownRendererOptions {
   /** The directory to build. @default process.cwd() */
@@ -19,6 +21,12 @@ export interface BuildOptions extends MarkdownRendererOptions {
   outDir?: string;
   /** Include dotfiles. `.well-known` is always included. @default false */
   dotfiles?: boolean;
+  /** The default theme, as for the server. A theme that does not load stops the build. @default "github" */
+  theme?: string;
+  /** Write the theme catalog, so the theme picker of the site can list all themes. @default true */
+  themeCatalog?: boolean;
+  /** The store that loads and caches the themes. */
+  themeStore?: ThemeStore;
 }
 
 export interface BuildResult {
@@ -28,6 +36,8 @@ export interface BuildResult {
   /** The number of other files that the build copied. */
   files: number;
   ms: number;
+  /** Problems that did not stop the build. */
+  warnings: string[];
 }
 
 /** The directory in the site for the files of comarkserv. */
@@ -100,6 +110,21 @@ export async function build(options: BuildOptions = {}): Promise<BuildResult> {
   if (outDir === root || root.startsWith(`${outDir}/`)) {
     throw new Error("The output directory must not be the root or a parent of the root.");
   }
+  // The theme loads before the build deletes an earlier build, so a typo in the
+  // theme name does not leave an empty directory.
+  const themeStore = options.themeStore ?? createThemeStore();
+  const theme = await themeStore.load(options.theme ?? "github", process.cwd());
+  const warnings: string[] = [];
+  const catalog =
+    options.themeCatalog === false
+      ? undefined
+      : await themeStore.catalog().catch((error: unknown) => {
+          const reason = error instanceof Error ? error.message : String(error);
+          warnings.push(
+            `The theme catalog is not available (${reason}). The theme picker shows only the built-in themes.`,
+          );
+          return undefined;
+        });
   await prepareOutDir(outDir);
 
   const dotfiles = options.dotfiles ?? false;
@@ -133,13 +158,21 @@ export async function build(options: BuildOptions = {}): Promise<BuildResult> {
     const base = `${prefix}${ASSETS_DIR}/`;
     return renderPage({
       ...input,
+      theme,
       home: `${prefix}index.html`,
       assets: {
         css: `${base}app.css?v=${assets["app.css"].version}`,
         js: `${base}app.js?v=${assets["app.js"].version}`,
         katex: `${base}katex/katex.min.css?v=${assets.katexVersion}`,
       },
-      config: { root: prefix, search: `${base}search.json`, events: "", source: `/${url}`, kind },
+      config: {
+        root: prefix,
+        search: `${base}search.json`,
+        events: "",
+        themes: catalog ? `${base}themes/catalog.json` : "",
+        source: `/${url}`,
+        kind,
+      },
     });
   };
   const crumbs = (pathname: string): Crumb[] =>
@@ -212,6 +245,9 @@ export async function build(options: BuildOptions = {}): Promise<BuildResult> {
     write(join(outDir, ASSETS_DIR, "app.css"), assets["app.css"].body),
     write(join(outDir, ASSETS_DIR, "app.js"), assets["app.js"].body),
     write(join(outDir, ASSETS_DIR, "search.json"), JSON.stringify(await search.get())),
+    ...(catalog
+      ? [write(join(outDir, ASSETS_DIR, "themes", "catalog.json"), JSON.stringify(catalog))]
+      : []),
     write(
       join(outDir, MARKER),
       JSON.stringify({ generator: "comarkserv", date: new Date().toISOString() }),
@@ -232,5 +268,6 @@ export async function build(options: BuildOptions = {}): Promise<BuildResult> {
     pages: markdownPages.length + listings.length,
     files: files.length - markdownPages.length,
     ms: performance.now() - started,
+    warnings,
   };
 }
